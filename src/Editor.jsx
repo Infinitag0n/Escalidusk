@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Excalidraw, MainMenu, restoreElements, useDevice } from "@excalidraw/excalidraw";
+import {
+  CaptureUpdateAction,
+  Excalidraw,
+  MainMenu,
+  restoreElements,
+  useDevice,
+} from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import { fetchDiagram, isDiagramId } from "./api.js";
-import { DEFAULT_BACKGROUND, DiagramSync, fetchSceneFiles, sceneKey } from "./sync.js";
+import { DiagramSync, fetchSceneFiles, sceneKey, sharedSettings } from "./sync.js";
 
 // Per-browser preferences; these are not part of the shared diagram.
 const THEME_KEY = "escalidusk:theme";
@@ -28,17 +34,18 @@ function writeLocal(key, value) {
 async function loadDiagram(id) {
   const diagram = await fetchDiagram(id);
   const elements = restoreElements(diagram?.scene.elements ?? [], null);
-  const background = diagram?.scene.appState?.viewBackgroundColor ?? DEFAULT_BACKGROUND;
+  const settings = sharedSettings(diagram?.scene.appState);
   const files = await fetchSceneFiles(id, elements);
   return {
     readOnly: diagram?.readOnly ?? false,
     viewId: diagram?.viewId ?? null,
     version: diagram?.version ?? 0,
-    savedKey: sceneKey(elements, background),
+    savedKey: sceneKey(elements, settings),
+    savedSettings: settings,
     initialData: {
       elements,
       files,
-      appState: { viewBackgroundColor: background, theme: readLocal(THEME_KEY, "light") },
+      appState: { ...settings, theme: readLocal(THEME_KEY, "light") },
       libraryItems: readLocal(LIBRARY_KEY, []),
       scrollToContent: true,
     },
@@ -129,6 +136,42 @@ function CopyLinkButton({ label, link, title, primary = false }) {
 }
 
 /**
+ * The diagram's name, shown as plain editable text beside the menu button.
+ * On a read-only page it is a label, not a text field. Hidden on the phone
+ * layout, where the toolbar fills the top bar.
+ */
+function TitleField({ value, readOnly, onEdit, onFocusChange }) {
+  const device = useDevice();
+  if (device.editor.isMobile) return null;
+  if (readOnly) {
+    return value ? (
+      <div className="diagram-title diagram-title--readonly" title={value}>
+        {value}
+      </div>
+    ) : null;
+  }
+  return (
+    // No type attribute on purpose: Excalidraw styles every input[type=text]
+    // with a border and background, and a bare input is still a text field.
+    <input
+      className="diagram-title"
+      value={value}
+      placeholder="Untitled"
+      aria-label="Diagram name"
+      maxLength={120}
+      spellCheck={false}
+      autoComplete="off"
+      onChange={(event) => onEdit(event.target.value)}
+      onFocus={() => onFocusChange(true)}
+      onBlur={() => onFocusChange(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
+      }}
+    />
+  );
+}
+
+/**
  * The phone layout has no room for buttons in the top bar, so there the two
  * share actions live in the menu instead. Renders nothing on larger screens.
  */
@@ -166,6 +209,10 @@ export default function Editor({ id }) {
   const [status, setStatus] = useState("saved");
   // The diagram's read-only id. Unknown until the diagram has been saved once.
   const [viewId, setViewId] = useState(null);
+  // The diagram's name. Excalidraw's app state holds the saved value (it is
+  // also the default file name for exports); this mirrors it for the text field.
+  const [title, setTitle] = useState("");
+  const titleFocusedRef = useRef(false);
   const syncRef = useRef(null);
   const themeRef = useRef(null);
 
@@ -176,6 +223,7 @@ export default function Editor({ id }) {
         if (cancelled) return;
         setLoaded(result);
         setViewId(result.viewId);
+        setTitle(result.savedSettings.name);
       },
       (error) => !cancelled && setLoadError(error),
     );
@@ -191,6 +239,7 @@ export default function Editor({ id }) {
       api,
       version: loaded.version,
       savedKey: loaded.savedKey,
+      savedSettings: loaded.savedSettings,
       syncedFileIds: Object.keys(loaded.initialData.files),
       onStatus: setStatus,
       readOnly: loaded.readOnly,
@@ -221,8 +270,15 @@ export default function Editor({ id }) {
     };
   }, [id, api, loaded]);
 
+  useEffect(() => {
+    document.title = title.trim() ? `${title.trim()} - Escalidusk` : "Escalidusk";
+  }, [title]);
+
   const onChange = useCallback((elements, appState, files) => {
     syncRef.current?.handleChange(elements, appState, files);
+    // Pick up a name that arrived from elsewhere, but never while the user is
+    // typing: an older echo of their own keystrokes would overwrite the field.
+    if (!titleFocusedRef.current) setTitle(appState.name ?? "");
     if (appState.theme !== themeRef.current) {
       themeRef.current = appState.theme;
       writeLocal(THEME_KEY, appState.theme);
@@ -248,6 +304,15 @@ export default function Editor({ id }) {
     const go = () => window.location.assign(url.href);
     (syncRef.current?.flush() ?? Promise.resolve()).then(go, go);
   }, []);
+
+  const onTitleEdit = (name) => {
+    setTitle(name);
+    api?.updateScene({ appState: { name }, captureUpdate: CaptureUpdateAction.NEVER });
+  };
+  const onTitleFocusChange = (focused) => {
+    titleFocusedRef.current = focused;
+    if (!focused && api) setTitle(api.getAppState().name ?? "");
+  };
 
   if (loadError) {
     return (
@@ -295,6 +360,12 @@ export default function Editor({ id }) {
           )
         }
       >
+        <TitleField
+          value={title}
+          readOnly={loaded.readOnly}
+          onEdit={onTitleEdit}
+          onFocusChange={onTitleFocusChange}
+        />
         <MainMenu>
           <MainMenu.Item onSelect={() => window.open("/", "_blank")}>New diagram</MainMenu.Item>
           <ShareMenuItems viewLink={readOnlyLink} editLink={editLink} canEdit={canEdit} />

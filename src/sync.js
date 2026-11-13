@@ -13,11 +13,22 @@ const RETRY_DELAY_MS = 5000;
 // cannot bring them back. After this long they are dropped from saves.
 const DELETED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export const DEFAULT_BACKGROUND = "#ffffff";
+const DEFAULT_BACKGROUND = "#ffffff";
+
+/**
+ * The part of Excalidraw's app state that belongs to the diagram and is
+ * saved with it. Everything else (zoom, theme, selection...) is per viewer.
+ */
+export function sharedSettings(appState) {
+  return {
+    viewBackgroundColor: appState?.viewBackgroundColor ?? DEFAULT_BACKGROUND,
+    name: appState?.name ?? "",
+  };
+}
 
 /** Fingerprint of everything that gets saved; equal keys mean nothing to save. */
-export function sceneKey(elements, background) {
-  return `${hashElementsVersion(elements)}:${background}`;
+export function sceneKey(elements, settings) {
+  return `${hashElementsVersion(elements)}:${JSON.stringify(settings)}`;
 }
 
 function usedFileIds(elements) {
@@ -55,6 +66,7 @@ export class DiagramSync {
   #api;
   #version;
   #savedKey;
+  #savedSettings; // shared settings as last known to be on the server
   #onStatus;
   #onViewId;
   #readOnly;
@@ -75,16 +87,28 @@ export class DiagramSync {
    * @param {object} options.api Excalidraw imperative API
    * @param {number} options.version server version the scene was loaded at (0 = not stored yet)
    * @param {string} options.savedKey sceneKey() of the scene as loaded
+   * @param {object} options.savedSettings sharedSettings() of the scene as loaded
    * @param {Iterable<string>} options.syncedFileIds image ids already on the server
    * @param {(status: "saved" | "unsaved" | "saving" | "error") => void} options.onStatus
    * @param {boolean} [options.readOnly] opened through a read-only link
    * @param {(viewId: string) => void} [options.onViewId] told the read-only id after each save
    */
-  constructor({ id, api, version, savedKey, syncedFileIds, onStatus, readOnly = false, onViewId }) {
+  constructor({
+    id,
+    api,
+    version,
+    savedKey,
+    savedSettings,
+    syncedFileIds,
+    onStatus,
+    readOnly = false,
+    onViewId,
+  }) {
     this.#id = id;
     this.#api = api;
     this.#version = version;
     this.#savedKey = savedKey;
+    this.#savedSettings = savedSettings;
     this.#syncedFiles = new Set(syncedFileIds);
     this.#onStatus = onStatus;
     this.#readOnly = readOnly;
@@ -94,7 +118,7 @@ export class DiagramSync {
   /** Call from Excalidraw's onChange. Cheap when nothing relevant changed. */
   handleChange(elements, appState, files) {
     if (this.#disposed || this.#readOnly) return;
-    const changed = sceneKey(elements, appState.viewBackgroundColor) !== this.#savedKey;
+    const changed = sceneKey(elements, sharedSettings(appState)) !== this.#savedKey;
     if (!changed && !this.#hasFilesToUpload(elements, files)) return;
 
     if (!this.#dirty) {
@@ -148,15 +172,15 @@ export class DiagramSync {
       const remote = await fetchDiagram(this.#id);
       if (!remote || remote.version <= this.#version || this.#saving || this.#disposed) return;
 
-      const background = this.#api.getAppState().viewBackgroundColor;
+      const api = this.#api;
       const clean =
         !this.#dirty &&
-        sceneKey(this.#api.getSceneElementsIncludingDeleted(), background) === this.#savedKey;
-      const merged = this.#merge(remote, { adoptAppState: clean });
+        sceneKey(api.getSceneElementsIncludingDeleted(), sharedSettings(api.getAppState())) ===
+          this.#savedKey;
+      const merged = this.#merge(remote);
       if (clean) {
         // Nothing local to add, so the merged scene is exactly what is stored.
-        const remoteBackground = remote.scene.appState?.viewBackgroundColor ?? background;
-        this.#savedKey = sceneKey(merged, remoteBackground);
+        this.#savedKey = sceneKey(merged, this.#savedSettings);
       }
     } catch (error) {
       console.warn("Could not check for remote changes", error);
@@ -190,8 +214,8 @@ export class DiagramSync {
 
   async #saveOnce() {
     const elements = this.#api.getSceneElementsIncludingDeleted();
-    const background = this.#api.getAppState().viewBackgroundColor;
-    const key = sceneKey(elements, background);
+    const settings = sharedSettings(this.#api.getAppState());
+    const key = sceneKey(elements, settings);
 
     // Images first, so a stored scene never points at an image the server lacks.
     const files = this.#api.getFiles();
@@ -205,12 +229,13 @@ export class DiagramSync {
     const cutoff = Date.now() - DELETED_TTL_MS;
     const result = await saveDiagram(this.#id, this.#version, {
       elements: elements.filter((element) => !element.isDeleted || element.updated > cutoff),
-      appState: { viewBackgroundColor: background },
+      appState: settings,
     });
 
     if (result.ok) {
       this.#version = result.version;
       this.#savedKey = key;
+      this.#savedSettings = settings;
       this.#onViewId?.(result.viewId);
       return;
     }
@@ -218,24 +243,34 @@ export class DiagramSync {
     // The server copy moved on. Merge it into the canvas and let the save
     // loop try again on top of the new version.
     if (result.current) {
-      this.#merge(result.current, { adoptAppState: false });
+      this.#merge(result.current);
     } else {
       this.#version = 0;
     }
     this.#dirty = true;
   }
 
-  #merge(remote, { adoptAppState }) {
+  #merge(remote) {
     const api = this.#api;
+
+    // Settings merge field by field: a value changed here since the last save
+    // wins, anything untouched here takes the server's value.
+    const local = sharedSettings(api.getAppState());
+    const remoteSettings = sharedSettings(remote.scene.appState);
+    const settings = {};
+    for (const key of Object.keys(remoteSettings)) {
+      settings[key] = local[key] === this.#savedSettings[key] ? remoteSettings[key] : local[key];
+    }
+    this.#savedSettings = remoteSettings;
+
     const merged = reconcileElements(
       api.getSceneElementsIncludingDeleted(),
       restoreElements(remote.scene.elements, null),
       api.getAppState(),
     );
-    const background = remote.scene.appState?.viewBackgroundColor;
     api.updateScene({
       elements: merged,
-      ...(adoptAppState && background ? { appState: { viewBackgroundColor: background } } : {}),
+      appState: settings,
       captureUpdate: CaptureUpdateAction.NEVER,
     });
     this.#version = remote.version;

@@ -4,6 +4,7 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 
 - Opening `/` starts a new diagram and puts its UUID in the address bar.
 - Changes autosave about a second after you stop drawing.
+- Give a diagram a name by typing next to the menu button. It becomes the browser tab title and the default file name for exports.
 - Images are stored separately from the scene, so saves stay small.
 - Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. The **Share** button (top right) copies it once the diagram has been saved; **Share Edit** copies the editing link. On phones both are in the menu. The read-only link cannot be turned back into the editing link.
 - A link on an element that points to another diagram on the same server opens it in place.
@@ -40,10 +41,22 @@ This runs the API on port 3000 and the Vite dev server on <http://localhost:5173
 
 `npm run build && npm start` runs the production setup without Docker.
 
+## Test
+
+```sh
+npx playwright install chromium   # once, downloads a browser
+npm test
+```
+
+The tests build the app, start it on a spare port with an empty temporary database, and drive it through the API and a real browser. To use a browser you already have instead of downloading one, set `PW_CHANNEL` to `msedge` or `chrome`.
+
+Running `docker compose watch` instead of `docker compose up` rebuilds and restarts the container whenever the source changes.
+
 ## Layout
 
 - `server/` — Fastify server: diagram and image API, serves the built frontend. `store.js` is the SQLite layer.
 - `src/` — React app around the `@excalidraw/excalidraw` editor. `sync.js` holds autosave, image upload and merging.
+- `tests/` — Playwright tests for the API and the editor.
 - `scripts/copy-assets.mjs` — copies Excalidraw's fonts into `public/` so nothing is fetched from a CDN.
 
 ## API
