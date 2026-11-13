@@ -1,0 +1,12 @@
+services:
+  excalidawn:
+    build: .
+    image: excalidawn
+    ports:
+      - "3000:3000"
+    volumes:
+      - excalidawn-data:/data
+    restart: unless-stopped
+
+volumes:
+  excalidawn-data:
