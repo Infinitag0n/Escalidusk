@@ -1,12 +1,12 @@
 services:
-  excalidawn:
+  escalidusk:
     build: .
-    image: excalidawn
+    image: escalidusk
     ports:
       - "3000:3000"
     volumes:
-      - excalidawn-data:/data
+      - escalidusk-data:/data
     restart: unless-stopped
 
 volumes:
-  excalidawn-data:
+  escalidusk-data:

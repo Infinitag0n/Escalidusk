@@ -1,4 +1,4 @@
-# Excalidawn
+# Escalidusk
 
 Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-side storage and permanent links. Every diagram lives at `<url>/<diagram-uuid>`.
 
@@ -8,6 +8,8 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 - A link on an element that points to another diagram on the same server opens it in place.
 - Two tabs on the same diagram merge their changes when saving or regaining focus. This is not live collaboration: the other tab's edits show up on its next save or when you switch back.
 
+Escalidusk is an unofficial community project. It is not affiliated with or endorsed by Excalidraw; it embeds the open-source `@excalidraw/excalidraw` editor.
+
 Anyone who has a diagram's URL can view and edit it. There is no login; put the service behind a reverse proxy with authentication if it is reachable by people you don't trust.
 
 ## Run with Docker
@@ -16,7 +18,7 @@ Anyone who has a diagram's URL can view and edit it. There is no login; put the 
 docker compose up -d --build
 ```
 
-Then open <http://localhost:3000>. Diagrams are kept in the `excalidawn-data` volume (a single SQLite database under `/data`).
+Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` volume (a single SQLite database under `/data`).
 
 | Variable   | Default   | Meaning                         |
 | ---------- | --------- | ------------------------------- |
@@ -52,3 +54,7 @@ This runs the API on port 3000 and the Vite dev server on <http://localhost:5173
 | `GET /api/diagrams/:id/files/:fileId`     | Image bytes                                                               |
 | `PUT /api/diagrams/:id/files/:fileId`     | Raw image body with its `Content-Type`                                    |
 | `GET /api/health`                         | `{ ok: true }`                                                            |
+
+## License
+
+[MIT](LICENSE). Excalidraw, which this project embeds, is also MIT licensed. The fonts bundled into the built app come from the Excalidraw package and keep their own licenses.

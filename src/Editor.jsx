@@ -5,8 +5,8 @@ import { fetchDiagram, isDiagramId } from "./api.js";
 import { DEFAULT_BACKGROUND, DiagramSync, fetchSceneFiles, sceneKey } from "./sync.js";
 
 // Per-browser preferences; these are not part of the shared diagram.
-const THEME_KEY = "excalidawn:theme";
-const LIBRARY_KEY = "excalidawn:library";
+const THEME_KEY = "escalidusk:theme";
+const LIBRARY_KEY = "escalidusk:library";
 
 function readLocal(key, fallback) {
   try {

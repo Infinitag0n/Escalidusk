@@ -11,7 +11,7 @@ import { DatabaseSync } from "node:sqlite";
  */
 export function openStore(dataDir) {
   mkdirSync(dataDir, { recursive: true });
-  const db = new DatabaseSync(path.join(dataDir, "excalidawn.db"));
+  const db = new DatabaseSync(path.join(dataDir, "escalidusk.db"));
 
   db.exec(`
     PRAGMA journal_mode = WAL;
