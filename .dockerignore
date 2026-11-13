@@ -3,3 +3,8 @@ dist
 data
 public/fonts
 .git
+tests
+test-results
+playwright-report
+playwright.config.js
+.github

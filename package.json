@@ -13,7 +13,8 @@
     "dev:web": "vite",
     "assets": "node scripts/copy-assets.mjs",
     "build": "npm run assets && vite build",
-    "start": "node --disable-warning=ExperimentalWarning server/index.js"
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "test": "playwright test"
   },
   "dependencies": {
     "@fastify/static": "^10.1.11",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
+    "@playwright/test": "^1.65.1",
     "@vitejs/plugin-react": "^6.3.0",
     "concurrently": "^10.0.7",
     "react": "^18.3.1",
