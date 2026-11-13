@@ -32,14 +32,16 @@ export async function fetchDiagram(id) {
 }
 
 /**
+ * `key` is our own fingerprint of the scene; the server passes it on to
+ * anyone else who has the diagram open.
  * @returns `{ ok: true, version, viewId }` when saved, or `{ ok: false, current }`
  * when the server holds a different version (`current` is null if the diagram vanished).
  */
-export async function saveDiagram(id, baseVersion, scene) {
+export async function saveDiagram(id, baseVersion, scene, key) {
   const response = await fetch(`/api/diagrams/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ baseVersion, ...scene }),
+    body: JSON.stringify({ baseVersion, key, ...scene }),
   });
   if (response.status === 409) {
     const { current } = await response.json();

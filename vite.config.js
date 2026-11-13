@@ -10,7 +10,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": "http://localhost:3000",
+      // ws: live collaboration uses a WebSocket under /api.
+      "/api": { target: "http://localhost:3000", ws: true },
     },
   },
   build: {

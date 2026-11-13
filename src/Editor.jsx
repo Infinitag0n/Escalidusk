@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   CaptureUpdateAction,
   Excalidraw,
@@ -8,11 +8,23 @@ import {
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import { fetchDiagram, isDiagramId } from "./api.js";
+import { LiveSession } from "./live.js";
 import { DiagramSync, fetchSceneFiles, sceneKey, sharedSettings } from "./sync.js";
 
 // Per-browser preferences; these are not part of the shared diagram.
 const THEME_KEY = "escalidusk:theme";
 const LIBRARY_KEY = "escalidusk:library";
+const USERNAME_KEY = "escalidusk:username";
+
+/** The name other people see next to our cursor. Made up once per browser. */
+function localUsername() {
+  let name = readLocal(USERNAME_KEY, null);
+  if (typeof name !== "string" || !name) {
+    name = `Guest ${100 + Math.floor(Math.random() * 900)}`;
+    writeLocal(USERNAME_KEY, name);
+  }
+  return name;
+}
 
 function readLocal(key, fallback) {
   try {
@@ -135,6 +147,56 @@ function CopyLinkButton({ label, link, title, primary = false }) {
   );
 }
 
+const TITLE_GAP_PX = 12;
+const TITLE_MIN_PX = 60;
+
+/**
+ * How wide the name may be: from where it starts to whatever comes next in
+ * the top bar (the toolbar, or the buttons on the right when there is no
+ * toolbar). Excalidraw moves its toolbar around as the bar fills up, for
+ * example when collaborators' avatars appear, so this is measured, not assumed.
+ * Returns the room (0 while there is none worth using, null before the first
+ * measurement) and a ref callback for the element. The label on a read-only
+ * page comes and goes with the name, so measuring follows the element itself.
+ */
+function useTitleRoom() {
+  const [field, setField] = useState(null);
+  const [room, setRoom] = useState(null);
+  useLayoutEffect(() => {
+    if (!field) return undefined;
+    const measure = () => {
+      const start = field.getBoundingClientRect().left;
+      // The right-hand group can stretch across the bar (it does on read-only
+      // pages), so look at the things inside it, not at the group itself.
+      const edges = [
+        ...document.querySelectorAll(
+          ".excalidraw .App-toolbar, .excalidraw .layer-ui__wrapper__top-right > *",
+        ),
+      ]
+        .map((element) => element.getBoundingClientRect())
+        .filter((box) => box.width > 0 && box.left > start)
+        .map((box) => box.left);
+      const available = Math.floor(Math.min(...edges, window.innerWidth) - start - TITLE_GAP_PX);
+      setRoom(available >= TITLE_MIN_PX ? available : 0);
+    };
+    measure();
+    const frame = requestAnimationFrame(measure);
+    // The toolbar shifts when its neighbours change size, so watch those too.
+    const observer = new ResizeObserver(measure);
+    for (const selector of [".App-menu_top", ".App-toolbar", ".layer-ui__wrapper__top-right"]) {
+      const element = document.querySelector(`.excalidraw ${selector}`);
+      if (element) observer.observe(element);
+    }
+    window.addEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [field]);
+  return [room, setField];
+}
+
 /**
  * The diagram's name, shown as plain editable text beside the menu button.
  * On a read-only page it is a label, not a text field. Hidden on the phone
@@ -142,10 +204,17 @@ function CopyLinkButton({ label, link, title, primary = false }) {
  */
 function TitleField({ value, readOnly, onEdit, onFocusChange }) {
   const device = useDevice();
+  const [room, ref] = useTitleRoom();
   if (device.editor.isMobile) return null;
+  const fit = room ? { visibility: "visible" } : { visibility: "hidden" };
   if (readOnly) {
     return value ? (
-      <div className="diagram-title diagram-title--readonly" title={value}>
+      <div
+        ref={ref}
+        className="diagram-title diagram-title--readonly"
+        style={{ ...fit, maxWidth: room ?? 0 }}
+        title={value}
+      >
         {value}
       </div>
     ) : null;
@@ -154,7 +223,9 @@ function TitleField({ value, readOnly, onEdit, onFocusChange }) {
     // No type attribute on purpose: Excalidraw styles every input[type=text]
     // with a border and background, and a bare input is still a text field.
     <input
+      ref={ref}
       className="diagram-title"
+      style={{ ...fit, width: room ?? 0 }}
       value={value}
       placeholder="Untitled"
       aria-label="Diagram name"
@@ -213,6 +284,9 @@ export default function Editor({ id }) {
   // also the default file name for exports); this mirrors it for the text field.
   const [title, setTitle] = useState("");
   const titleFocusedRef = useRef(false);
+  // How many other people are editing this diagram right now.
+  const [peerCount, setPeerCount] = useState(0);
+  const liveRef = useRef(null);
   const syncRef = useRef(null);
   const themeRef = useRef(null);
 
@@ -246,6 +320,17 @@ export default function Editor({ id }) {
       onViewId: setViewId,
     });
     syncRef.current = sync;
+    const live = new LiveSession({
+      id,
+      api,
+      sync,
+      readOnly: loaded.readOnly,
+      username: localUsername(),
+      elements: loaded.initialData.elements,
+      settings: loaded.savedSettings,
+      onPeers: setPeerCount,
+    });
+    liveRef.current = live;
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") sync.flush();
@@ -265,6 +350,8 @@ export default function Editor({ id }) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("beforeunload", onBeforeUnload);
+      live.dispose();
+      liveRef.current = null;
       sync.dispose();
       syncRef.current = null;
     };
@@ -276,6 +363,7 @@ export default function Editor({ id }) {
 
   const onChange = useCallback((elements, appState, files) => {
     syncRef.current?.handleChange(elements, appState, files);
+    liveRef.current?.handleChange(elements, appState);
     // Pick up a name that arrived from elsewhere, but never while the user is
     // typing: an older echo of their own keystrokes would overwrite the field.
     if (!titleFocusedRef.current) setTitle(appState.name ?? "");
@@ -346,6 +434,8 @@ export default function Editor({ id }) {
         initialData={loaded.initialData}
         viewModeEnabled={loaded.readOnly}
         onChange={onChange}
+        onPointerUpdate={(payload) => liveRef.current?.handlePointer(payload)}
+        isCollaborating={peerCount > 0}
         onLinkOpen={onLinkOpen}
         onLibraryChange={(items) => writeLocal(LIBRARY_KEY, items)}
         renderTopRightUI={(isMobile) =>

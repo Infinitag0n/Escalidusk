@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
+import fastifyWebsocket from "@fastify/websocket";
+import { createLiveRooms } from "./live.js";
 import { openStore } from "./store.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -12,6 +14,7 @@ const DIST_DIR = fileURLToPath(new URL("../dist", import.meta.url));
 
 const MAX_SCENE_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
+const MAX_LIVE_MESSAGE_BYTES = 8 * 1024 * 1024;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const FILE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -28,7 +31,9 @@ const IMAGE_TYPES = new Set([
 ]);
 
 const store = openStore(DATA_DIR);
+const live = createLiveRooms();
 const app = Fastify({ logger: true, bodyLimit: MAX_SCENE_BYTES });
+await app.register(fastifyWebsocket, { options: { maxPayload: MAX_LIVE_MESSAGE_BYTES } });
 
 // Image uploads arrive as raw bytes.
 app.addContentTypeParser(
@@ -80,10 +85,13 @@ app.put("/api/diagrams/:id", async (request, reply) => {
   ) {
     return reply.code(400).send({ error: "expected { baseVersion, elements, appState? }" });
   }
+  const key = typeof body.key === "string" && body.key.length <= 512 ? body.key : null;
 
   const sceneJson = JSON.stringify({ elements: body.elements, appState: body.appState ?? {} });
   const result = store.saveDiagram(id, body.baseVersion, sceneJson);
   if (result.ok) {
+    // Let everyone else who has this diagram open know it was saved.
+    if (key) live.notifySaved(id, result.version, key, result.viewId);
     return { version: result.version, updatedAt: result.updatedAt, viewId: result.viewId };
   }
 
@@ -94,6 +102,20 @@ app.put("/api/diagrams/:id", async (request, reply) => {
     .code(409)
     .type("application/json; charset=utf-8")
     .send(`{"error":"conflict","current":${current}}`);
+});
+
+// Live collaboration: a WebSocket per person per open diagram. Opening it
+// with a read-only id joins the same room as the editors, but listen-only.
+app.get("/api/diagrams/:id/live", { websocket: true }, (socket, request) => {
+  const { id } = request.params;
+  if (!UUID_RE.test(id)) {
+    socket.close(1008, "invalid diagram id");
+    return;
+  }
+  const found = store.findDiagram(id);
+  const name = String(request.query.name ?? "").trim().slice(0, 40) || "Guest";
+  // An unknown id is a diagram that has not been saved yet; its room is the id itself.
+  live.join(found?.row.id ?? id, socket, { name, readOnly: found?.readOnly ?? false });
 });
 
 app.get("/api/diagrams/:id/files/:fileId", async (request, reply) => {
@@ -164,6 +186,7 @@ if (existsSync(DIST_DIR)) {
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {
+    live.close();
     await app.close();
     store.close();
     process.exit(0);

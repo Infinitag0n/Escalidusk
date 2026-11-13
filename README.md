@@ -8,7 +8,8 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 - Images are stored separately from the scene, so saves stay small.
 - Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. The **Share** button (top right) copies it once the diagram has been saved; **Share Edit** copies the editing link. On phones both are in the menu. The read-only link cannot be turned back into the editing link.
 - A link on an element that points to another diagram on the same server opens it in place.
-- Two tabs on the same diagram merge their changes when saving or regaining focus. This is not live collaboration: the other tab's edits show up on its next save or when you switch back.
+- Live collaboration: everyone with a diagram open sees each other's changes and cursors as they happen. People on the read-only link follow along live too, without being able to change anything.
+- If the live connection drops, editing and saving carry on; changes are merged when saving or when the connection returns, never overwritten.
 
 Escalidusk is an unofficial community project. It is not affiliated with or endorsed by Excalidraw; it embeds the open-source `@excalidraw/excalidraw` editor.
 
@@ -27,6 +28,8 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `PORT`     | `3000`    | Port the server listens on      |
 | `HOST`     | `0.0.0.0` | Address the server binds to     |
 | `DATA_DIR` | `/data`   | Folder holding the database     |
+
+Live collaboration uses a WebSocket at `/api/diagrams/<id>/live`. Behind a reverse proxy, make sure WebSocket upgrades are passed through, or people will only see each other's changes after a save.
 
 ## Develop
 
@@ -54,8 +57,8 @@ Running `docker compose watch` instead of `docker compose up` rebuilds and resta
 
 ## Layout
 
-- `server/` — Fastify server: diagram and image API, serves the built frontend. `store.js` is the SQLite layer.
-- `src/` — React app around the `@excalidraw/excalidraw` editor. `sync.js` holds autosave, image upload and merging.
+- `server/` — Fastify server: diagram and image API, serves the built frontend. `store.js` is the SQLite layer, `live.js` the collaboration rooms.
+- `src/` — React app around the `@excalidraw/excalidraw` editor. `sync.js` holds autosave, image upload and merging; `live.js` the collaboration connection.
 - `tests/` — Playwright tests for the API and the editor.
 - `scripts/copy-assets.mjs` — copies Excalidraw's fonts into `public/` so nothing is fetched from a CDN.
 
@@ -67,6 +70,7 @@ Running `docker compose watch` instead of `docker compose up` rebuilds and resta
 | `PUT /api/diagrams/:id`                   | Body `{ baseVersion, elements, appState }`. 409 with the stored copy if `baseVersion` is out of date; use `0` to create. 403 through a read-only id |
 | `GET /api/diagrams/:id/files/:fileId`     | Image bytes                                                               |
 | `PUT /api/diagrams/:id/files/:fileId`     | Raw image body with its `Content-Type`. 403 through a read-only id        |
+| `GET /api/diagrams/:id/live` (WebSocket)  | Collaboration room for the diagram; listen-only through a read-only id    |
 | `GET /api/health`                         | `{ ok: true }`                                                            |
 
 ## License
