@@ -5,12 +5,13 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 - Opening `/` starts a new diagram and puts its UUID in the address bar.
 - Changes autosave about a second after you stop drawing.
 - Images are stored separately from the scene, so saves stay small.
+- Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. Get it from the menu ("Copy read-only link") once the diagram has been saved. The read-only link cannot be turned back into the editing link.
 - A link on an element that points to another diagram on the same server opens it in place.
 - Two tabs on the same diagram merge their changes when saving or regaining focus. This is not live collaboration: the other tab's edits show up on its next save or when you switch back.
 
 Escalidusk is an unofficial community project. It is not affiliated with or endorsed by Excalidraw; it embeds the open-source `@excalidraw/excalidraw` editor.
 
-Anyone who has a diagram's URL can view and edit it. There is no login; put the service behind a reverse proxy with authentication if it is reachable by people you don't trust.
+Anyone who has a diagram's editing URL can view and edit it, and anyone with its read-only URL can view it. There is no login and no way to list diagrams; put the service behind a reverse proxy with authentication if it is reachable by people you don't trust.
 
 ## Run with Docker
 
@@ -49,10 +50,10 @@ This runs the API on port 3000 and the Vite dev server on <http://localhost:5173
 
 | Request                                   | Result                                                                    |
 | ----------------------------------------- | ------------------------------------------------------------------------- |
-| `GET /api/diagrams/:id`                   | `{ id, version, updatedAt, scene: { elements, appState } }` or 404        |
-| `PUT /api/diagrams/:id`                   | Body `{ baseVersion, elements, appState }`. 409 with the stored copy if `baseVersion` is out of date; use `0` to create |
+| `GET /api/diagrams/:id`                   | `{ id, readOnly, viewId, version, updatedAt, scene: { elements, appState } }` or 404. `:id` may be the editing id or the read-only id; with the read-only id, `readOnly` is true and `viewId` is omitted |
+| `PUT /api/diagrams/:id`                   | Body `{ baseVersion, elements, appState }`. 409 with the stored copy if `baseVersion` is out of date; use `0` to create. 403 through a read-only id |
 | `GET /api/diagrams/:id/files/:fileId`     | Image bytes                                                               |
-| `PUT /api/diagrams/:id/files/:fileId`     | Raw image body with its `Content-Type`                                    |
+| `PUT /api/diagrams/:id/files/:fileId`     | Raw image body with its `Content-Type`. 403 through a read-only id        |
 | `GET /api/health`                         | `{ ok: true }`                                                            |
 
 ## License

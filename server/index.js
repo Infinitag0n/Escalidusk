@@ -37,9 +37,13 @@ app.addContentTypeParser(
   (_request, body, done) => done(null, body),
 );
 
-function diagramJson(row) {
+function diagramJson(row, readOnly) {
+  // A read-only link must never reveal the id that allows editing.
+  const ids = readOnly
+    ? `"id":"${row.viewId}","readOnly":true`
+    : `"id":"${row.id}","readOnly":false,"viewId":"${row.viewId}"`;
   // `scene` is already JSON; splice it in rather than parsing and re-encoding.
-  return `{"id":"${row.id}","version":${row.version},"updatedAt":${row.updatedAt},"scene":${row.scene}}`;
+  return `{${ids},"version":${row.version},"updatedAt":${row.updatedAt},"scene":${row.scene}}`;
 }
 
 function isPlainObject(value) {
@@ -52,14 +56,19 @@ app.get("/api/diagrams/:id", async (request, reply) => {
   const { id } = request.params;
   if (!UUID_RE.test(id)) return reply.code(400).send({ error: "invalid diagram id" });
 
-  const row = store.getDiagram(id);
-  if (!row) return reply.code(404).send({ error: "not found" });
-  return reply.type("application/json; charset=utf-8").send(diagramJson(row));
+  const found = store.findDiagram(id);
+  if (!found) return reply.code(404).send({ error: "not found" });
+  return reply
+    .type("application/json; charset=utf-8")
+    .send(diagramJson(found.row, found.readOnly));
 });
 
 app.put("/api/diagrams/:id", async (request, reply) => {
   const { id } = request.params;
   if (!UUID_RE.test(id)) return reply.code(400).send({ error: "invalid diagram id" });
+
+  // Also stops anyone creating a diagram whose id would shadow a read-only link.
+  if (store.isViewId(id)) return reply.code(403).send({ error: "this link is read-only" });
 
   const body = request.body;
   if (
@@ -74,11 +83,13 @@ app.put("/api/diagrams/:id", async (request, reply) => {
 
   const sceneJson = JSON.stringify({ elements: body.elements, appState: body.appState ?? {} });
   const result = store.saveDiagram(id, body.baseVersion, sceneJson);
-  if (result.ok) return { version: result.version, updatedAt: result.updatedAt };
+  if (result.ok) {
+    return { version: result.version, updatedAt: result.updatedAt, viewId: result.viewId };
+  }
 
   // Someone else saved first (or the diagram is gone). Hand back what is stored
   // so the client can merge and retry.
-  const current = result.current ? diagramJson(result.current) : "null";
+  const current = result.current ? diagramJson(result.current, false) : "null";
   return reply
     .code(409)
     .type("application/json; charset=utf-8")
@@ -91,7 +102,9 @@ app.get("/api/diagrams/:id/files/:fileId", async (request, reply) => {
     return reply.code(400).send({ error: "invalid id" });
   }
 
-  const file = store.getFile(id, fileId);
+  // Images are stored under the editing id; a read-only id maps onto it.
+  // An unknown id is used as-is: images are uploaded before a diagram's first save.
+  const file = store.getFile(store.findDiagram(id)?.row.id ?? id, fileId);
   if (!file) return reply.code(404).send({ error: "not found" });
   return reply
     .header("Content-Type", file.mimeType)
@@ -107,6 +120,8 @@ app.put("/api/diagrams/:id/files/:fileId", async (request, reply) => {
   if (!UUID_RE.test(id) || !FILE_ID_RE.test(fileId)) {
     return reply.code(400).send({ error: "invalid id" });
   }
+
+  if (store.isViewId(id)) return reply.code(403).send({ error: "this link is read-only" });
 
   const mimeType = String(request.headers["content-type"] ?? "")
     .split(";")[0]

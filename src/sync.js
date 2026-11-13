@@ -48,6 +48,7 @@ export async function fetchSceneFiles(diagramId, elements) {
 /**
  * Keeps one open diagram in step with the server: debounced autosave,
  * image upload, and merging when the server copy has moved on.
+ * A read-only diagram never saves; it only pulls in remote changes.
  */
 export class DiagramSync {
   #id;
@@ -55,6 +56,8 @@ export class DiagramSync {
   #version;
   #savedKey;
   #onStatus;
+  #onViewId;
+  #readOnly;
   #status = "saved";
   #syncedFiles;
   #loadingFiles = new Set();
@@ -73,19 +76,23 @@ export class DiagramSync {
    * @param {string} options.savedKey sceneKey() of the scene as loaded
    * @param {Iterable<string>} options.syncedFileIds image ids already on the server
    * @param {(status: "saved" | "unsaved" | "saving" | "error") => void} options.onStatus
+   * @param {boolean} [options.readOnly] opened through a read-only link
+   * @param {(viewId: string) => void} [options.onViewId] told the read-only id after each save
    */
-  constructor({ id, api, version, savedKey, syncedFileIds, onStatus }) {
+  constructor({ id, api, version, savedKey, syncedFileIds, onStatus, readOnly = false, onViewId }) {
     this.#id = id;
     this.#api = api;
     this.#version = version;
     this.#savedKey = savedKey;
     this.#syncedFiles = new Set(syncedFileIds);
     this.#onStatus = onStatus;
+    this.#readOnly = readOnly;
+    this.#onViewId = onViewId;
   }
 
   /** Call from Excalidraw's onChange. Cheap when nothing relevant changed. */
   handleChange(elements, appState, files) {
-    if (this.#disposed) return;
+    if (this.#disposed || this.#readOnly) return;
     const changed = sceneKey(elements, appState.viewBackgroundColor) !== this.#savedKey;
     if (!changed && !this.#hasFilesToUpload(elements, files)) return;
 
@@ -198,6 +205,7 @@ export class DiagramSync {
     if (result.ok) {
       this.#version = result.version;
       this.#savedKey = key;
+      this.#onViewId?.(result.viewId);
       return;
     }
 

@@ -19,7 +19,11 @@ async function failure(response) {
   return new Error(`Request failed: ${response.status} ${response.statusText}`);
 }
 
-/** @returns the stored diagram `{ id, version, updatedAt, scene }`, or null if it does not exist yet. */
+/**
+ * @returns the stored diagram `{ id, readOnly, viewId?, version, updatedAt, scene }`,
+ * or null if it does not exist yet. `viewId` (the read-only id) is only
+ * present when the diagram was opened through its editing id.
+ */
 export async function fetchDiagram(id) {
   const response = await fetch(`/api/diagrams/${id}`, { cache: "no-store" });
   if (response.status === 404) return null;
@@ -28,7 +32,7 @@ export async function fetchDiagram(id) {
 }
 
 /**
- * @returns `{ ok: true, version }` when saved, or `{ ok: false, current }`
+ * @returns `{ ok: true, version, viewId }` when saved, or `{ ok: false, current }`
  * when the server holds a different version (`current` is null if the diagram vanished).
  */
 export async function saveDiagram(id, baseVersion, scene) {
@@ -42,8 +46,8 @@ export async function saveDiagram(id, baseVersion, scene) {
     return { ok: false, current };
   }
   if (!response.ok) throw await failure(response);
-  const { version } = await response.json();
-  return { ok: true, version };
+  const { version, viewId } = await response.json();
+  return { ok: true, version, viewId };
 }
 
 /** Uploads one Excalidraw file record (`{ id, mimeType, dataURL }`) as raw bytes. */

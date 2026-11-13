@@ -31,6 +31,8 @@ async function loadDiagram(id) {
   const background = diagram?.scene.appState?.viewBackgroundColor ?? DEFAULT_BACKGROUND;
   const files = await fetchSceneFiles(id, elements);
   return {
+    readOnly: diagram?.readOnly ?? false,
+    viewId: diagram?.viewId ?? null,
     version: diagram?.version ?? 0,
     savedKey: sceneKey(elements, background),
     initialData: {
@@ -48,20 +50,36 @@ const STATUS_LABELS = {
   unsaved: "Unsaved changes",
   saving: "Saving…",
   error: "Save failed, retrying",
+  readonly: "Read-only",
 };
+
+async function copyLink(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch {
+    // The clipboard needs HTTPS or localhost; otherwise show the link to copy by hand.
+    window.prompt("Read-only link", url);
+  }
+}
 
 export default function Editor({ id }) {
   const [loaded, setLoaded] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [api, setApi] = useState(null);
   const [status, setStatus] = useState("saved");
+  // The diagram's read-only id. Unknown until the diagram has been saved once.
+  const [viewId, setViewId] = useState(null);
   const syncRef = useRef(null);
   const themeRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
     loadDiagram(id).then(
-      (result) => !cancelled && setLoaded(result),
+      (result) => {
+        if (cancelled) return;
+        setLoaded(result);
+        setViewId(result.viewId);
+      },
       (error) => !cancelled && setLoadError(error),
     );
     return () => {
@@ -78,6 +96,8 @@ export default function Editor({ id }) {
       savedKey: loaded.savedKey,
       syncedFileIds: Object.keys(loaded.initialData.files),
       onStatus: setStatus,
+      readOnly: loaded.readOnly,
+      onViewId: setViewId,
     });
     syncRef.current = sync;
 
@@ -152,23 +172,29 @@ export default function Editor({ id }) {
       <Excalidraw
         excalidrawAPI={setApi}
         initialData={loaded.initialData}
+        viewModeEnabled={loaded.readOnly}
         onChange={onChange}
         onLinkOpen={onLinkOpen}
         onLibraryChange={(items) => writeLocal(LIBRARY_KEY, items)}
         renderTopRightUI={() => (
           <div className={`save-status save-status--${status}`} role="status">
-            {STATUS_LABELS[status]}
+            {STATUS_LABELS[loaded.readOnly ? "readonly" : status]}
           </div>
         )}
       >
         <MainMenu>
           <MainMenu.Item onSelect={() => window.open("/", "_blank")}>New diagram</MainMenu.Item>
-          <MainMenu.DefaultItems.LoadScene />
+          {viewId && (
+            <MainMenu.Item onSelect={() => copyLink(`${window.location.origin}/${viewId}`)}>
+              Copy read-only link
+            </MainMenu.Item>
+          )}
+          {!loaded.readOnly && <MainMenu.DefaultItems.LoadScene />}
           <MainMenu.DefaultItems.Export />
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.SearchMenu />
           <MainMenu.DefaultItems.Help />
-          <MainMenu.DefaultItems.ClearCanvas />
+          {!loaded.readOnly && <MainMenu.DefaultItems.ClearCanvas />}
           <MainMenu.Separator />
           <MainMenu.DefaultItems.ToggleTheme />
           <MainMenu.DefaultItems.ChangeCanvasBackground />
