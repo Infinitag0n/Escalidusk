@@ -7,6 +7,22 @@ services:
     volumes:
       - escalidusk-data:/data
     restart: unless-stopped
+    # Only used by `docker compose watch`: rebuild and restart the container
+    # whenever the source changes. Plain `docker compose up` ignores this.
+    develop:
+      watch:
+        - action: rebuild
+          path: ./src
+        - action: rebuild
+          path: ./server
+        - action: rebuild
+          path: ./scripts
+        - action: rebuild
+          path: ./index.html
+        - action: rebuild
+          path: ./vite.config.js
+        - action: rebuild
+          path: ./package.json
 
 volumes:
   escalidusk-data:

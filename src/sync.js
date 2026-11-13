@@ -64,6 +64,7 @@ export class DiagramSync {
   #dirty = false;
   #dirtySince = 0;
   #saving = false;
+  #failed = false; // the last save failed and a retry is scheduled
   #refreshing = false;
   #disposed = false;
   #timer = null;
@@ -100,6 +101,9 @@ export class DiagramSync {
       this.#dirty = true;
       this.#dirtySince = Date.now();
     }
+    // While a failed save waits for its retry, leave the error showing and the
+    // retry timer alone; otherwise every further change would retry at once.
+    if (this.#failed) return;
     if (!this.#saving) this.#setStatus("unsaved");
     const maxWait = this.#dirtySince + MAX_SAVE_WAIT_MS - Date.now();
     this.#schedule(Math.max(0, Math.min(SAVE_DELAY_MS, maxWait)));
@@ -117,6 +121,7 @@ export class DiagramSync {
     if (this.#saving || this.#disposed || !this.#dirty) return;
 
     this.#saving = true;
+    this.#failed = false;
     try {
       while (this.#dirty && !this.#disposed) {
         this.#dirty = false;
@@ -127,6 +132,7 @@ export class DiagramSync {
     } catch (error) {
       console.error("Saving the diagram failed", error);
       this.#dirty = true;
+      this.#failed = true;
       this.#setStatus("error");
       this.#schedule(RETRY_DELAY_MS);
     } finally {

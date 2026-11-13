@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Excalidraw, MainMenu, restoreElements } from "@excalidraw/excalidraw";
+import { Excalidraw, MainMenu, restoreElements, useDevice } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import { fetchDiagram, isDiagramId } from "./api.js";
 import { DEFAULT_BACKGROUND, DiagramSync, fetchSceneFiles, sceneKey } from "./sync.js";
@@ -45,21 +45,118 @@ async function loadDiagram(id) {
   };
 }
 
-const STATUS_LABELS = {
-  saved: "Saved",
-  unsaved: "Unsaved changes",
-  saving: "Saving…",
-  error: "Save failed, retrying",
-  readonly: "Read-only",
+const SHARE_TITLE = "Copy a link that lets people view this diagram";
+const SHARE_EDIT_TITLE = "Copy a link that lets people edit this diagram";
+const NOT_SAVED_TITLE = "Available once the diagram has been saved";
+
+// Short labels keep the top bar compact; the hover text carries the detail.
+const STATUSES = {
+  saved: { label: "Saved", title: "All changes are saved" },
+  unsaved: { label: "Unsaved", title: "Changes will be saved in a moment" },
+  saving: { label: "Saving…", title: "Saving changes" },
+  error: { label: "Save failed", title: "Saving failed. Retrying automatically." },
 };
+
+/**
+ * Save status, or "Read-only" on a view link. Every possible label is laid
+ * out in the same spot with only the current one visible, so the width never
+ * changes as the status does.
+ */
+function SaveStatus({ status, readOnly }) {
+  if (readOnly) {
+    return (
+      <div className="top-pill save-status" role="status" title="You are viewing a read-only link">
+        <span>Read-only</span>
+      </div>
+    );
+  }
+  return (
+    <div
+      className={`top-pill save-status save-status--${status}`}
+      role="status"
+      data-status={status}
+      title={STATUSES[status].title}
+    >
+      {Object.entries(STATUSES).map(([key, { label }]) => (
+        <span
+          key={key}
+          className={key === status ? undefined : "top-pill__text--hidden"}
+          aria-hidden={key !== status}
+        >
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 async function copyLink(url) {
   try {
     await navigator.clipboard.writeText(url);
   } catch {
     // The clipboard needs HTTPS or localhost; otherwise show the link to copy by hand.
-    window.prompt("Read-only link", url);
+    window.prompt("Copy this link", url);
   }
+}
+
+/** Copies a link when clicked. Stays visible but disabled while there is no link yet. */
+function CopyLinkButton({ label, link, title, primary = false }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <button
+      type="button"
+      className={`top-pill share-button${primary ? " share-button--primary" : ""}`}
+      disabled={!link}
+      title={link ? title : NOT_SAVED_TITLE}
+      onClick={async () => {
+        await copyLink(link);
+        setCopied(true);
+      }}
+    >
+      {/* Both texts always take up space, so the button keeps one width. */}
+      <span className={copied ? "top-pill__text--hidden" : undefined}>{label}</span>
+      <span className={copied ? undefined : "top-pill__text--hidden"} aria-hidden={!copied}>
+        Copied
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The phone layout has no room for buttons in the top bar, so there the two
+ * share actions live in the menu instead. Renders nothing on larger screens.
+ */
+function ShareMenuItems({ viewLink, editLink, canEdit }) {
+  const device = useDevice();
+  if (!device.editor.isMobile) return null;
+  return (
+    <>
+      <MainMenu.Item
+        disabled={!viewLink}
+        className={viewLink ? undefined : "menu-item--disabled"}
+        title={viewLink ? SHARE_TITLE : NOT_SAVED_TITLE}
+        onSelect={() => copyLink(viewLink)}
+      >
+        Share
+      </MainMenu.Item>
+      {canEdit && (
+        <MainMenu.Item
+          disabled={!editLink}
+          className={editLink ? undefined : "menu-item--disabled"}
+          title={editLink ? SHARE_EDIT_TITLE : NOT_SAVED_TITLE}
+          onSelect={() => copyLink(editLink)}
+        >
+          Share Edit
+        </MainMenu.Item>
+      )}
+    </>
+  );
 }
 
 export default function Editor({ id }) {
@@ -167,6 +264,16 @@ export default function Editor({ id }) {
     return <div className="notice">Loading…</div>;
   }
 
+  // A viewer is already on the read-only link. An editor gets one after the first save.
+  const readOnlyLink = loaded.readOnly
+    ? window.location.href
+    : viewId && `${window.location.origin}/${viewId}`;
+
+  // Sharing an editing link to a diagram the server has never seen would be
+  // odd, so it also waits for the first save (which is when viewId arrives).
+  const canEdit = !loaded.readOnly;
+  const editLink = canEdit && viewId ? window.location.href : null;
+
   return (
     <div className="editor">
       <Excalidraw
@@ -176,19 +283,21 @@ export default function Editor({ id }) {
         onChange={onChange}
         onLinkOpen={onLinkOpen}
         onLibraryChange={(items) => writeLocal(LIBRARY_KEY, items)}
-        renderTopRightUI={() => (
-          <div className={`save-status save-status--${status}`} role="status">
-            {STATUS_LABELS[loaded.readOnly ? "readonly" : status]}
-          </div>
-        )}
+        renderTopRightUI={(isMobile) =>
+          isMobile ? null : (
+            <>
+              <CopyLinkButton primary label="Share" link={readOnlyLink} title={SHARE_TITLE} />
+              {canEdit && (
+                <CopyLinkButton label="Share Edit" link={editLink} title={SHARE_EDIT_TITLE} />
+              )}
+              <SaveStatus status={status} readOnly={loaded.readOnly} />
+            </>
+          )
+        }
       >
         <MainMenu>
           <MainMenu.Item onSelect={() => window.open("/", "_blank")}>New diagram</MainMenu.Item>
-          {viewId && (
-            <MainMenu.Item onSelect={() => copyLink(`${window.location.origin}/${viewId}`)}>
-              Copy read-only link
-            </MainMenu.Item>
-          )}
+          <ShareMenuItems viewLink={readOnlyLink} editLink={editLink} canEdit={canEdit} />
           {!loaded.readOnly && <MainMenu.DefaultItems.LoadScene />}
           <MainMenu.DefaultItems.Export />
           <MainMenu.DefaultItems.SaveAsImage />

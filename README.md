@@ -5,7 +5,7 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 - Opening `/` starts a new diagram and puts its UUID in the address bar.
 - Changes autosave about a second after you stop drawing.
 - Images are stored separately from the scene, so saves stay small.
-- Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. Get it from the menu ("Copy read-only link") once the diagram has been saved. The read-only link cannot be turned back into the editing link.
+- Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. The **Share** button (top right) copies it once the diagram has been saved; **Share Edit** copies the editing link. On phones both are in the menu. The read-only link cannot be turned back into the editing link.
 - A link on an element that points to another diagram on the same server opens it in place.
 - Two tabs on the same diagram merge their changes when saving or regaining focus. This is not live collaboration: the other tab's edits show up on its next save or when you switch back.
 
