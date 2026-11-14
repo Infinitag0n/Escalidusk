@@ -17,6 +17,7 @@ import {
   linkedDiagramIds,
   withCurrentNames,
 } from "./diagramLinks.js";
+import { MovedTools, isMovedTool } from "./MovedTools.jsx";
 import { LiveSession } from "./live.js";
 import {
   editIdFor,
@@ -442,8 +443,9 @@ function OpenDiagram({ id, addressId, startViewing }) {
   const [username, setUsername] = useState(localUsername);
   // Set if an administrator deletes the diagram while it is open here.
   const [deleted, setDeleted] = useState(false);
-  // Whether the laser pointer is the active tool (it can also be switched with K).
-  const [laserActive, setLaserActive] = useState(false);
+  // The tool currently selected in Excalidraw.
+  const [activeTool, setActiveTool] = useState("selection");
+  const laserActive = activeTool === "laser";
   // How many other people have this diagram open right now.
   const [peerCount, setPeerCount] = useState(0);
   const liveRef = useRef(null);
@@ -586,7 +588,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
   const onChange = useCallback((elements, appState, files) => {
     syncRef.current?.handleChange(elements, appState, files);
     liveRef.current?.handleChange(elements, appState);
-    setLaserActive(appState.activeTool.type === "laser");
+    setActiveTool(appState.activeTool.type);
     // Pick up a name that arrived from elsewhere, but never while the user is
     // typing: an older echo of their own keystrokes would overwrite the field.
     if (!titleFocusedRef.current) setTitle(appState.name ?? "");
@@ -834,7 +836,11 @@ function OpenDiagram({ id, addressId, startViewing }) {
     : [];
 
   return (
-    <div className="editor" onPointerDownCapture={onPointerDownCapture} onKeyDown={onKeyDown}>
+    <div
+      className={`editor${isMovedTool(activeTool) ? " editor--moved-tool-active" : ""}`}
+      onPointerDownCapture={onPointerDownCapture}
+      onKeyDown={onKeyDown}
+    >
       {deleted && (
         <div className="deleted-banner" role="alert">
           This diagram was deleted by an administrator. What you see is your copy; nothing is saved
@@ -935,6 +941,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
           onDone={onUsernameDone}
           onLinkDiagram={canEdit && !deleted && !viewMode ? () => setPicker("link") : null}
         />
+        {api && !viewing && <MovedTools api={api} activeTool={activeTool} />}
         <MainMenu>
           <MainMenu.Item onSelect={() => window.open("/new", "_blank")}>New diagram</MainMenu.Item>
           <MainMenu.Item onSelect={() => setPicker("open")}>Open recent…</MainMenu.Item>

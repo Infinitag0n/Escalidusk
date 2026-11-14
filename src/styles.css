@@ -453,3 +453,26 @@ body,
   margin: 0.25rem 0 0;
   color: var(--list-muted);
 }
+
+/* --- Draw, Insert image and Eraser are moved under "More tools" (see MovedTools.jsx) --- */
+
+.excalidraw .App-toolbar label:has([data-testid="toolbar-freedraw"]),
+.excalidraw .App-toolbar label:has([data-testid="toolbar-image"]),
+.excalidraw .App-toolbar label:has([data-testid="toolbar-eraser"]) {
+  display: none;
+}
+
+/* Our entries at the top of the menu, set apart from Excalidraw's own. */
+.excalidraw .moved-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.35rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--default-border-color, #e3e3ea);
+}
+
+/* While one of them is selected, light up "More tools", as Excalidraw does for its own. */
+.editor--moved-tool-active .excalidraw .App-toolbar__extra-tools-trigger {
+  background: var(--color-primary-light, #e0dfff);
+}

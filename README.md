@@ -6,6 +6,7 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 - Changes autosave about a second after you stop drawing.
 - Tap the space bar to switch between editing and viewing (also in the menu). While viewing, nothing can be changed by accident, dragging pans, and the laser pointer is available. Holding the space bar still pans, as in Excalidraw.
 - The address follows the mode: the editing link while editing, the read-only link while viewing. Your browser remembers which diagrams it can edit, so opening one of them through its read-only link starts in view mode with **Edit** one tap away. Anyone else gets the plain read-only page.
+- The toolbar is a little shorter than stock Excalidraw's: Draw, Insert image and Eraser are under **More tools** (the last toolbar button). Their keyboard shortcuts (P, 9, E) work as usual.
 - Give a diagram a name by typing next to the menu button. It becomes the browser tab title and the default file name for exports.
 - Images are stored separately from the scene, so saves stay small.
 - Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. The **Share** button (top right) copies it once the diagram has been saved; **Share Edit** copies the editing link. On phones both are in the menu. The read-only link cannot be turned back into the editing link.
