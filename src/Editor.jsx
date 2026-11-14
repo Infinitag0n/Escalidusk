@@ -30,6 +30,8 @@ const USERNAME_KEY = "escalidusk:username";
 
 const USER_ID_KEY = "escalidusk:user-id";
 const USERNAME_MAX_LENGTH = 40;
+// A space bar press shorter than this is a tap (switch mode); longer is a hold (pan).
+const SPACE_TAP_MS = 300;
 
 /**
  * This browser's private user id, made up on first use. It is a soft
@@ -573,6 +575,53 @@ export default function Editor({ id }) {
   // Which dialog is open: "open" (go to a recent diagram), "link" (add a link to one), or null.
   const [picker, setPicker] = useState(null);
 
+  // An editor can flip to view mode and back: nothing can be changed by
+  // accident, dragging pans, and the laser is at hand. This is local to this
+  // window; a read-only page is always in view mode.
+  const [viewMode, setViewMode] = useState(false);
+  const viewing = Boolean(loaded?.readOnly) || viewMode;
+  const canToggleView = Boolean(loaded) && !loaded.readOnly;
+
+  // A tap on the space bar switches between editing and viewing. Excalidraw
+  // uses a held space bar for panning, so only a short press with no mouse
+  // button in between counts, and never while something is being typed.
+  useEffect(() => {
+    if (!canToggleView) return undefined;
+    let pressedAt = 0;
+    let usedForPanning = false;
+    const busyElsewhere = (target) =>
+      (target instanceof Element &&
+        target.closest(
+          "textarea, select, button, a[href], [contenteditable='true'], [role='dialog'], " +
+            "input:not([type='radio']):not([type='checkbox'])",
+        )) ||
+      document.querySelector(".picker, .excalidraw .Modal");
+
+    const onKeyDown = (event) => {
+      if (event.code !== "Space" || event.repeat) return;
+      const plain = !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+      pressedAt = plain && !busyElsewhere(event.target) ? Date.now() : 0;
+      usedForPanning = false;
+    };
+    const onPointerDown = () => {
+      usedForPanning = true;
+    };
+    const onKeyUp = (event) => {
+      if (event.code !== "Space" || !pressedAt) return;
+      const tap = Date.now() - pressedAt < SPACE_TAP_MS && !usedForPanning;
+      pressedAt = 0;
+      if (tap && !busyElsewhere(event.target)) setViewMode((on) => !on);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [canToggleView]);
+
   const openRecent = (entry) => {
     setPicker(null);
     const go = () => window.location.assign(`/${entry.id}`);
@@ -601,11 +650,11 @@ export default function Editor({ id }) {
     setTimeout(focusCanvas);
   };
 
-  // On a read-only page Excalidraw turns every drag into panning, laser or
+  // In view mode Excalidraw turns every drag into panning, laser or
   // not. So while the laser is on, a drag that starts on the canvas is taken
   // over here, before Excalidraw sees it, and drawn through the live session.
   const onPointerDownCapture = (event) => {
-    if (!loaded?.readOnly || !laserActive || !api || !liveRef.current) return;
+    if (!viewing || !laserActive || !api || !liveRef.current) return;
     if (event.button !== 0 || !event.isPrimary || event.target.tagName !== "CANVAS") return;
     event.stopPropagation();
     event.preventDefault();
@@ -630,9 +679,9 @@ export default function Editor({ id }) {
     api?.setActiveTool({ type: laserActive ? "selection" : "laser" });
     focusCanvas();
   };
-  // Excalidraw ignores its tool shortcuts on a read-only page, so K is handled here.
+  // Excalidraw ignores its tool shortcuts in view mode, so K is handled here.
   const onKeyDown = (event) => {
-    if (!loaded?.readOnly || event.key.toLowerCase() !== "k") return;
+    if (!viewing || event.key.toLowerCase() !== "k") return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.target.closest("input, textarea, [contenteditable='true']")) return;
     toggleLaser();
@@ -728,7 +777,7 @@ export default function Editor({ id }) {
       <Excalidraw
         excalidrawAPI={setApi}
         initialData={loaded.initialData}
-        viewModeEnabled={loaded.readOnly}
+        viewModeEnabled={viewing}
         onChange={onChange}
         onPointerUpdate={(payload) => liveRef.current?.handlePointer(payload)}
         isCollaborating={peerCount > 0}
@@ -737,7 +786,17 @@ export default function Editor({ id }) {
         renderTopRightUI={(isMobile) =>
           isMobile ? null : (
             <>
-              {loaded.readOnly && (
+              {viewMode && (
+                <button
+                  type="button"
+                  className="top-pill share-button"
+                  title="Back to editing (Space)"
+                  onClick={() => setViewMode(false)}
+                >
+                  <span>Edit</span>
+                </button>
+              )}
+              {viewing && (
                 <LaserButton
                   active={laserActive}
                   onToggle={toggleLaser}
@@ -754,7 +813,7 @@ export default function Editor({ id }) {
       >
         <TitleField
           value={title}
-          readOnly={loaded.readOnly}
+          readOnly={viewing}
           peerCount={peerCount}
           onEdit={onTitleEdit}
           onFocusChange={onTitleFocusChange}
@@ -763,21 +822,26 @@ export default function Editor({ id }) {
           value={username}
           onEdit={onUsernameEdit}
           onDone={onUsernameDone}
-          onLinkDiagram={canEdit && !deleted ? () => setPicker("link") : null}
+          onLinkDiagram={canEdit && !deleted && !viewMode ? () => setPicker("link") : null}
         />
         <MainMenu>
           <MainMenu.Item onSelect={() => window.open("/new", "_blank")}>New diagram</MainMenu.Item>
           <MainMenu.Item onSelect={() => setPicker("open")}>Open recent…</MainMenu.Item>
-          {canEdit && !deleted && (
+          {canToggleView && (
+            <MainMenu.Item shortcut="Space" onSelect={() => setViewMode((on) => !on)}>
+              {viewMode ? "Edit mode" : "View mode"}
+            </MainMenu.Item>
+          )}
+          {canEdit && !deleted && !viewMode && (
             <MainMenu.Item onSelect={() => setPicker("link")}>Link to a diagram…</MainMenu.Item>
           )}
           <ShareMenuItems viewLink={readOnlyLink} editLink={editLink} canEdit={canEdit} />
-          {!loaded.readOnly && <MainMenu.DefaultItems.LoadScene />}
+          {!viewing && <MainMenu.DefaultItems.LoadScene />}
           <MainMenu.DefaultItems.Export />
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.SearchMenu />
           <MainMenu.DefaultItems.Help />
-          {!loaded.readOnly && <MainMenu.DefaultItems.ClearCanvas />}
+          {!viewing && <MainMenu.DefaultItems.ClearCanvas />}
           <MainMenu.Separator />
           <MainMenu.DefaultItems.ToggleTheme />
           <MainMenu.DefaultItems.ChangeCanvasBackground />

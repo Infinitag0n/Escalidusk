@@ -4,6 +4,7 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 
 - Opening `/` starts a new diagram and puts its UUID in the address bar. Once your browser has opened some diagrams, `/` lists them so you can go back to one, with a button for a new one (`/new` always starts a new one). The menu has the same list under **Open recent…**. The list is kept in your browser; the server offers no list of diagrams to anyone.
 - Changes autosave about a second after you stop drawing.
+- Tap the space bar to switch between editing and viewing (also in the menu). While viewing, nothing can be changed by accident, dragging pans, and the laser pointer is available. Holding the space bar still pans, as in Excalidraw.
 - Give a diagram a name by typing next to the menu button. It becomes the browser tab title and the default file name for exports.
 - Images are stored separately from the scene, so saves stay small.
 - Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. The **Share** button (top right) copies it once the diagram has been saved; **Share Edit** copies the editing link. On phones both are in the menu. The read-only link cannot be turned back into the editing link.
