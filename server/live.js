@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 const HEARTBEAT_MS = 30_000;
 const OPEN = 1; // WebSocket.readyState of an open socket
 
+/** A display name as shown to other people: trimmed, bounded, never empty. */
+export function cleanName(raw) {
+  return String(raw ?? "").trim().slice(0, 40) || "Guest";
+}
+
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -10,8 +15,9 @@ function isPlainObject(value) {
 /**
  * Live collaboration rooms: one per diagram, holding everyone who has it open.
  *
- * The server only relays. Editors send element and settings changes and their
- * cursor position, and everyone else in the room receives them. Nothing sent
+ * The server only relays. Editors send element and settings changes, their
+ * cursor position and their display name, and everyone else in the room
+ * receives them. Nothing sent
  * here is stored; diagrams are still saved through the HTTP API, and the room
  * is told when a save lands.
  *
@@ -62,6 +68,9 @@ export function createLiveRooms() {
         };
       }
       if (out.elements || out.settings) broadcast(roomId, out, client);
+    } else if (message.t === "name") {
+      client.name = cleanName(message.name);
+      broadcast(roomId, { t: "name", from: client.id, name: client.name }, client);
     } else if (message.t === "pointer") {
       if (!Number.isFinite(message.x) || !Number.isFinite(message.y)) return;
       broadcast(
@@ -98,7 +107,7 @@ export function createLiveRooms() {
   return {
     /** Adds a freshly connected socket to a diagram's room. */
     join(roomId, socket, { name, readOnly }) {
-      const client = { id: randomUUID(), socket, name, readOnly, alive: true };
+      const client = { id: randomUUID(), socket, name: cleanName(name), readOnly, alive: true };
       let room = rooms.get(roomId);
       if (!room) {
         room = new Set();

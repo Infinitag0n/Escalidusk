@@ -155,3 +155,33 @@ body,
   white-space: nowrap;
   cursor: default;
 }
+
+/* Our own display name: plain text at the right end of the footer, just
+   before the help button. Same borderless look as the diagram name. */
+.excalidraw .user-name {
+  width: 11rem;
+  height: 2.25rem;
+  margin: 0 0 0 auto;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 0.5rem;
+  outline: 0;
+  box-shadow: none;
+  box-sizing: border-box;
+  font-family: var(--ui-font, system-ui, sans-serif);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+  color: var(--color-on-surface, #1b1b1f);
+  background: transparent;
+}
+
+.excalidraw .user-name::placeholder {
+  color: var(--color-on-surface, #1b1b1f);
+  opacity: 0.4;
+}
+
+.excalidraw .user-name:focus {
+  background: var(--island-bg-color, #fff);
+}

@@ -9,6 +9,7 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 - Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. The **Share** button (top right) copies it once the diagram has been saved; **Share Edit** copies the editing link. On phones both are in the menu. The read-only link cannot be turned back into the editing link.
 - A link on an element that points to another diagram on the same server opens it in place.
 - Live collaboration: everyone with a diagram open sees each other's changes and cursors as they happen. People on the read-only link follow along live too, without being able to change anything.
+- Others see you under the name in the bottom-right corner. It starts as a made-up "Guest" name; type over it to change it. It is remembered by your browser.
 - If the live connection drops, editing and saving carry on; changes are merged when saving or when the connection returns, never overwritten.
 
 Escalidusk is an unofficial community project. It is not affiliated with or endorsed by Excalidraw; it embeds the open-source `@excalidraw/excalidraw` editor.

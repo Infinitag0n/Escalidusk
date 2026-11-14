@@ -100,6 +100,12 @@ export class LiveSession {
     });
   }
 
+  /** Changes the name other people see for us, from now on and after a reconnect. */
+  setUsername(username) {
+    this.#username = username;
+    if (!this.#disposed && !this.#readOnly && this.#ready) this.#send({ t: "name", name: username });
+  }
+
   dispose() {
     this.#disposed = true;
     clearTimeout(this.#retryTimer);
@@ -176,6 +182,13 @@ export class LiveSession {
           });
         }
         this.#sync.applyRemote(message);
+        break;
+      }
+      case "name": {
+        const peer = this.#peers.get(message.from);
+        if (!peer) break;
+        peer.name = message.name;
+        this.#publishPeers();
         break;
       }
       case "pointer": {

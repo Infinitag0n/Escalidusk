@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import {
   CaptureUpdateAction,
   Excalidraw,
+  Footer,
   MainMenu,
   restoreElements,
   useDevice,
@@ -16,7 +17,12 @@ const THEME_KEY = "escalidusk:theme";
 const LIBRARY_KEY = "escalidusk:library";
 const USERNAME_KEY = "escalidusk:username";
 
-/** The name other people see next to our cursor. Made up once per browser. */
+const USERNAME_MAX_LENGTH = 40;
+
+/**
+ * The name other people see next to our cursor. Made up once per browser,
+ * editable from the bottom-right corner, and kept in the browser's storage.
+ */
 function localUsername() {
   let name = readLocal(USERNAME_KEY, null);
   if (typeof name !== "string" || !name) {
@@ -243,6 +249,34 @@ function TitleField({ value, readOnly, onEdit, onFocusChange }) {
 }
 
 /**
+ * Our own display name, as plain editable text in the bottom-right corner
+ * just before the help button. Rendered through Excalidraw's footer, which
+ * does not exist on the phone layout.
+ */
+function UserNameField({ value, onEdit, onDone }) {
+  return (
+    <Footer>
+      {/* No type attribute, for the same reason as the diagram name. */}
+      <input
+        className="user-name"
+        value={value}
+        placeholder="Your name"
+        aria-label="Your name"
+        title="Your name, as other people on this diagram see it"
+        maxLength={USERNAME_MAX_LENGTH}
+        spellCheck={false}
+        autoComplete="off"
+        onChange={(event) => onEdit(event.target.value)}
+        onBlur={onDone}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
+        }}
+      />
+    </Footer>
+  );
+}
+
+/**
  * The phone layout has no room for buttons in the top bar, so there the two
  * share actions live in the menu instead. Renders nothing on larger screens.
  */
@@ -284,6 +318,9 @@ export default function Editor({ id }) {
   // also the default file name for exports); this mirrors it for the text field.
   const [title, setTitle] = useState("");
   const titleFocusedRef = useRef(false);
+  // Our display name as typed. Empty while being retyped; storage and the
+  // other people only ever get a non-empty name.
+  const [username, setUsername] = useState(localUsername);
   // How many other people are editing this diagram right now.
   const [peerCount, setPeerCount] = useState(0);
   const liveRef = useRef(null);
@@ -397,6 +434,16 @@ export default function Editor({ id }) {
     setTitle(name);
     api?.updateScene({ appState: { name }, captureUpdate: CaptureUpdateAction.NEVER });
   };
+  const onUsernameEdit = (value) => {
+    setUsername(value);
+    const name = value.trim();
+    if (!name) return;
+    writeLocal(USERNAME_KEY, name);
+    liveRef.current?.setUsername(name);
+  };
+  // Leaving the field empty falls back to the last name that was in use.
+  const onUsernameDone = () => setUsername(localUsername());
+
   const onTitleFocusChange = (focused) => {
     titleFocusedRef.current = focused;
     if (!focused && api) setTitle(api.getAppState().name ?? "");
@@ -456,6 +503,9 @@ export default function Editor({ id }) {
           onEdit={onTitleEdit}
           onFocusChange={onTitleFocusChange}
         />
+        {!loaded.readOnly && (
+          <UserNameField value={username} onEdit={onUsernameEdit} onDone={onUsernameDone} />
+        )}
         <MainMenu>
           <MainMenu.Item onSelect={() => window.open("/", "_blank")}>New diagram</MainMenu.Item>
           <ShareMenuItems viewLink={readOnlyLink} editLink={editLink} canEdit={canEdit} />

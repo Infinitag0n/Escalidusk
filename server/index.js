@@ -113,9 +113,11 @@ app.get("/api/diagrams/:id/live", { websocket: true }, (socket, request) => {
     return;
   }
   const found = store.findDiagram(id);
-  const name = String(request.query.name ?? "").trim().slice(0, 40) || "Guest";
   // An unknown id is a diagram that has not been saved yet; its room is the id itself.
-  live.join(found?.row.id ?? id, socket, { name, readOnly: found?.readOnly ?? false });
+  live.join(found?.row.id ?? id, socket, {
+    name: request.query.name,
+    readOnly: found?.readOnly ?? false,
+  });
 });
 
 app.get("/api/diagrams/:id/files/:fileId", async (request, reply) => {
