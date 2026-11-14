@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import { createAddressHasher } from "./address.js";
 import { registerAdmin } from "./admin.js";
+import { sceneWithoutEditLinks } from "./links.js";
 import { DIAGRAM_DELETED, createLiveRooms } from "./live.js";
 import { openStore } from "./store.js";
 
@@ -72,8 +73,10 @@ function diagramJson(row, readOnly) {
   const ids = readOnly
     ? `"id":"${row.viewId}","readOnly":true`
     : `"id":"${row.id}","readOnly":false,"viewId":"${row.viewId}"`;
+  // Nor the editing ids of diagrams this one links to.
+  const scene = readOnly ? sceneWithoutEditLinks(row.scene) : row.scene;
   // `scene` is already JSON; splice it in rather than parsing and re-encoding.
-  return `{${ids},"version":${row.version},"updatedAt":${row.updatedAt},"scene":${row.scene}}`;
+  return `{${ids},"version":${row.version},"updatedAt":${row.updatedAt},"scene":${scene}}`;
 }
 
 function isPlainObject(value) {

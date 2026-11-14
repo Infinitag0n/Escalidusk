@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import {
+  connectLive,
   expectStatus,
   expectStoredCount,
   liveElements,
@@ -22,10 +23,15 @@ async function makeDiagram(page, request, name) {
   return { id, viewId: (await stored(request, id)).viewId };
 }
 
-/** Adds a link to `targetName` from the page's current diagram, using the footer button. */
-async function addLink(page, targetName) {
+/**
+ * Adds a link to `targetName` from the page's current diagram, using the
+ * footer button. The link is for editing unless `readOnly` is asked for.
+ */
+async function addLink(page, targetName, { readOnly = false } = {}) {
   await page.getByRole("button", { name: "Link diagram" }).click();
   const dialog = page.getByRole("dialog", { name: "Link to a diagram" });
+  await expect(dialog.getByRole("radio", { name: "for editing" })).toBeChecked();
+  if (readOnly) await dialog.getByRole("radio", { name: "read-only" }).check();
   await dialog.getByRole("button", { name: new RegExp(targetName) }).click();
   await expect(dialog).toHaveCount(0);
 }
@@ -48,7 +54,7 @@ async function followLink(page, hexagon) {
   await page.mouse.click(icon.x, icon.y);
 }
 
-test("linking to a diagram adds a hexagon carrying its name and read-only id", async ({
+test("linking to a diagram adds a hexagon carrying its name and ids", async ({
   page,
   request,
 }) => {
@@ -74,12 +80,77 @@ test("linking to a diagram adds a hexagon carrying its name and read-only id", a
   expect(Math.abs(label.x + label.width / 2 - hexagonCentre)).toBeLessThan(2);
   expect(Math.abs(label.y + label.height / 2 - hexagon.y)).toBeLessThan(2);
 
-  // It points at the read-only id. The editing id is nowhere in the scene,
-  // so sharing this diagram does not hand out edit access to the other one.
+  // Its plain link is the read-only one. By default it also carries the
+  // editing id, for the people who can edit this diagram.
   expect(hexagon.link).toBe(`/${target.viewId}`);
-  expect(hexagon.customData).toEqual({ escalidusk: { diagramLink: target.viewId } });
+  expect(hexagon.customData).toEqual({
+    escalidusk: { diagramLink: { view: target.viewId, edit: target.id } },
+  });
   expect(label.customData).toEqual({ escalidusk: { diagramLinkLabel: target.viewId } });
+
+  // Read through the read-only link, the same diagram does not contain the
+  // editing id anywhere: sharing it for viewing hands out no edit access.
+  const asViewer = await stored(request, diagram.viewId);
+  expect(parts(asViewer).hexagon.customData).toEqual({
+    escalidusk: { diagramLink: { view: target.viewId } },
+  });
+  expect(JSON.stringify(asViewer)).not.toContain(target.id);
+  expect(liveElements(asViewer)).toHaveLength(2);
+});
+
+test("a link can be made read-only, and then carries no editing id at all", async ({
+  page,
+  request,
+}) => {
+  const target = await makeDiagram(page, request, "Look, don't touch");
+  const source = await makeDiagram(page, request, "Overview");
+  await addLink(page, "Look, don't touch", { readOnly: true });
+  await expectStoredCount(request, source.id, 2);
+
+  const diagram = await stored(request, source.id);
+  expect(parts(diagram).hexagon.customData).toEqual({
+    escalidusk: { diagramLink: { view: target.viewId } },
+  });
   expect(JSON.stringify(diagram.scene)).not.toContain(target.id);
+});
+
+test("a diagram this browser can only view is always linked read-only", async ({
+  page,
+  request,
+}) => {
+  const target = await seedDiagram(request, { elements: [rectangle()], appState: { name: "Theirs" } });
+  await openDiagram(page, target.viewId);
+  const source = await makeDiagram(page, request, "Mine");
+  await addLink(page, "Theirs"); // "for editing" is selected, but there is no editing id to give
+  await expectStoredCount(request, source.id, 2);
+  expect(parts(await stored(request, source.id)).hexagon.customData).toEqual({
+    escalidusk: { diagramLink: { view: target.viewId } },
+  });
+});
+
+test("an editing id in a link never reaches a read-only connection", async ({
+  browser,
+  page,
+  request,
+  baseURL,
+}) => {
+  const target = await makeDiagram(page, request, "Private target");
+  const source = await makeDiagram(page, request, "Shared for viewing");
+  // Someone watching live through the read-only link, and another editor.
+  const viewer = await connectLive(baseURL, source.viewId);
+  const editor = await connectLive(baseURL, source.id);
+  await expect(page.locator(".UserList")).toBeVisible();
+
+  await addLink(page, "Private target");
+  await expectStoredCount(request, source.id, 2);
+  await expect.poll(() => viewer.of("update").length).toBeGreaterThan(0);
+
+  expect(JSON.stringify(viewer.messages)).not.toContain(target.id);
+  expect(JSON.stringify(viewer.messages)).toContain(target.viewId);
+  // The other editor does get it.
+  expect(JSON.stringify(editor.messages)).toContain(target.id);
+  viewer.socket.close();
+  editor.socket.close();
 });
 
 test("a new hexagon is selected as one unit and answers to the keyboard", async ({
@@ -145,25 +216,68 @@ test("following a link opens the editable page for someone who can edit the targ
   await expect(title(page)).toHaveValue("Editable target");
 });
 
-test("following a link gives everyone else the read-only page", async ({
-  browser,
-  page,
-  request,
-}) => {
-  const target = await makeDiagram(page, request, "Shared target");
-  const source = await makeDiagram(page, request, "Shared source");
-  await addLink(page, "Shared target");
-  await expectStoredCount(request, source.id, 2);
-  const { hexagon } = parts(await stored(request, source.id));
+test.describe("someone else following a link", () => {
+  /** A source diagram linking to a target, and a second person's own browser. */
+  async function setUp({ browser, page, request }, linkOptions) {
+    const target = await makeDiagram(page, request, "Shared target");
+    const source = await makeDiagram(page, request, "Shared source");
+    await addLink(page, "Shared target", linkOptions);
+    await expectStoredCount(request, source.id, 2);
+    await expectStatus(page, "saved");
+    const { hexagon } = parts(await stored(request, source.id));
+    const visitor = await (await browser.newContext()).newPage();
+    return { target, source, hexagon, visitor };
+  }
 
-  // Someone else, in their own browser, who was given the source diagram to edit.
-  const visitor = await (await browser.newContext()).newPage();
-  await openDiagram(visitor, source.id);
-  await followLink(visitor, hexagon);
-  await visitor.waitForURL(`**/${target.viewId}`);
-  await expect(visitor.locator(".save-status")).toHaveText("Read-only");
-  await expect(visitor.locator(".diagram-title--readonly")).toHaveText("Shared target");
-  await visitor.context().close();
+  test("an editor of the source may edit the target too", async ({ browser, page, request }) => {
+    const { target, source, hexagon, visitor } = await setUp({ browser, page, request });
+    await openDiagram(visitor, source.id);
+    await followLink(visitor, hexagon);
+    await visitor.waitForURL(`**/${target.id}`);
+    await expect(visitor.getByLabel("Diagram name")).toHaveValue("Shared target");
+    await expect(visitor.locator('[data-testid="toolbar-rectangle"]')).toHaveCount(1);
+    await visitor.context().close();
+  });
+
+  test("a viewer of the source gets the target read-only, with no way to edit it", async ({
+    browser,
+    page,
+    request,
+  }) => {
+    const { target, source, hexagon, visitor } = await setUp({ browser, page, request });
+    const received = [];
+    visitor.on("response", async (response) => {
+      if (response.url().includes("/api/")) received.push(await response.text().catch(() => ""));
+    });
+    await openDiagram(visitor, source.viewId);
+    await followLink(visitor, hexagon);
+    await visitor.waitForURL(`**/${target.viewId}`);
+    await expect(visitor.locator(".save-status")).toHaveText("Read-only");
+    await expect(visitor.locator(".diagram-title--readonly")).toHaveText("Shared target");
+    await expect(visitor.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+
+    // Nothing that browser was sent or kept names the target's editing id.
+    expect(received.join("\n")).not.toContain(target.id);
+    const kept = await visitor.evaluate(() => JSON.stringify(Object.entries(localStorage)));
+    expect(kept).not.toContain(target.id);
+    await visitor.context().close();
+  });
+
+  test("a read-only link gives even an editor of the source the read-only page", async ({
+    browser,
+    page,
+    request,
+  }) => {
+    const { target, source, hexagon, visitor } = await setUp(
+      { browser, page, request },
+      { readOnly: true },
+    );
+    await openDiagram(visitor, source.id);
+    await followLink(visitor, hexagon);
+    await visitor.waitForURL(`**/${target.viewId}`);
+    await expect(visitor.locator(".save-status")).toHaveText("Read-only");
+    await visitor.context().close();
+  });
 });
 
 test("the label follows the linked diagram's name", async ({ page, request }) => {

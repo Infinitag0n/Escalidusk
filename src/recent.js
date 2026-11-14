@@ -1,38 +1,54 @@
-// The diagrams this browser has opened, most recent first. Kept in the
-// browser only: the server has no list of diagrams to offer anyone, so this
-// is how people find their way back, and how they pick a diagram to link to.
+// What this browser knows about diagrams, kept in its local storage:
+//
+// - the diagrams it has opened, most recent first. The server has no list of
+//   diagrams to offer anyone, so this is how people find their way back, and
+//   how they pick a diagram to link to;
+// - which diagrams it can edit: for a read-only id, the editing id it has
+//   seen for the same diagram. This is what lets a read-only page offer
+//   "Edit", and it is kept even when a diagram is removed from the list.
 
-const KEY = "escalidusk:recent";
-const MAX = 50;
+const RECENT_KEY = "escalidusk:recent";
+const EDIT_IDS_KEY = "escalidusk:edit-ids";
+const MAX_RECENT = 50;
 
-function read() {
+function load(key, fallback) {
   try {
-    const list = JSON.parse(localStorage.getItem(KEY));
-    return Array.isArray(list) ? list.filter((entry) => typeof entry?.id === "string") : [];
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
   } catch {
-    return [];
+    return fallback;
   }
 }
 
-function write(list) {
+function store(key, value) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX)));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Storage can be full or blocked; the list is a convenience.
+    // Storage can be full or blocked; all of this is a convenience.
   }
+}
+
+function readRecent() {
+  const list = load(RECENT_KEY, []);
+  return Array.isArray(list) ? list.filter((entry) => typeof entry?.id === "string") : [];
+}
+
+function readEditIds() {
+  const map = load(EDIT_IDS_KEY, {});
+  return map && typeof map === "object" && !Array.isArray(map) ? map : {};
 }
 
 /**
  * Records that a diagram was just opened here (or brings an existing record
  * up to date and moves it to the top).
  * @param {object} diagram
- * @param {string} diagram.id the id it was opened with: editing or read-only
+ * @param {string} diagram.id the id it is worked on with: editing, or read-only
+ *   when this browser cannot edit it
  * @param {boolean} diagram.readOnly whether that id is the read-only one
- * @param {string | null} [diagram.viewId] its read-only id, when opened for editing
+ * @param {string | null} [diagram.viewId] its read-only id, when `id` is the editing one
  * @param {string} [diagram.name]
  */
 export function rememberDiagram({ id, readOnly, viewId, name }) {
-  const list = read();
+  const list = readRecent();
   const previous = list.find((entry) => entry.id === id);
   const entry = {
     id,
@@ -41,18 +57,26 @@ export function rememberDiagram({ id, readOnly, viewId, name }) {
     name: name ?? previous?.name ?? "",
     openedAt: Date.now(),
   };
-  write([entry, ...list.filter((other) => other.id !== id)]);
+  store(RECENT_KEY, [entry, ...list.filter((other) => other.id !== id)].slice(0, MAX_RECENT));
+  if (!readOnly && entry.viewId) rememberEditId(entry.viewId, id);
 }
 
 /** Changes details of a diagram already in the list, without moving it. */
 export function updateDiagram(id, changes) {
-  const list = read();
+  const list = readRecent();
   if (!list.some((entry) => entry.id === id)) return;
-  write(list.map((entry) => (entry.id === id ? { ...entry, ...changes } : entry)));
+  store(
+    RECENT_KEY,
+    list.map((entry) => (entry.id === id ? { ...entry, ...changes } : entry)),
+  );
 }
 
+/** Takes a diagram off the list. What this browser may edit is not affected. */
 export function forgetDiagram(id) {
-  write(read().filter((entry) => entry.id !== id));
+  store(
+    RECENT_KEY,
+    readRecent().filter((entry) => entry.id !== id),
+  );
 }
 
 /**
@@ -60,22 +84,41 @@ export function forgetDiagram(id) {
  * read-only link) appears once, as the one that can be edited.
  */
 export function recentDiagrams() {
-  const list = read();
+  const list = readRecent();
   const editable = new Set(list.filter((entry) => !entry.readOnly).map((entry) => entry.viewId));
   return list.filter((entry) => !(entry.readOnly && editable.has(entry.id)));
 }
 
-/**
- * The editing id this browser knows for a diagram, given its read-only id.
- * Links between diagrams always carry the read-only id, so that they never
- * hand out edit access; this is how someone who can already edit the target
- * still lands on the editable page.
- */
-export function editIdFor(viewId) {
-  return read().find((entry) => !entry.readOnly && entry.viewId === viewId)?.id ?? null;
+/** Notes that this browser can edit the diagram with this read-only id. */
+export function rememberEditId(viewId, editId) {
+  const map = readEditIds();
+  if (map[viewId] === editId) return;
+  store(EDIT_IDS_KEY, { ...map, [viewId]: editId });
 }
 
-/** The read-only id to use when linking to a diagram from the list, if it has one. */
+/** Drops what is known about editing a diagram, by either of its ids (it was deleted, or the id was wrong). */
+export function forgetEditId(anyId) {
+  const map = readEditIds();
+  store(
+    EDIT_IDS_KEY,
+    Object.fromEntries(
+      Object.entries(map).filter(([viewId, editId]) => viewId !== anyId && editId !== anyId),
+    ),
+  );
+}
+
+/** The editing id this browser knows for a diagram, given its read-only id. */
+export function editIdFor(viewId) {
+  return readEditIds()[viewId] ?? null;
+}
+
+/** The read-only id this browser knows for a diagram, given its editing id. */
+export function viewIdFor(editId) {
+  const found = Object.entries(readEditIds()).find(([, known]) => known === editId);
+  return found ? found[0] : null;
+}
+
+/** The read-only id of a diagram from the list, if it has one yet. */
 export function linkTargetOf(entry) {
   return entry.readOnly ? entry.id : entry.viewId;
 }

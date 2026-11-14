@@ -11,15 +11,23 @@ import {
 import "@excalidraw/excalidraw/index.css";
 import { DiagramPicker } from "./DiagramList.jsx";
 import { DeletedError, fetchDiagram, fetchSummaries, isDiagramId, newDiagramId } from "./api.js";
-import { createDiagramLink, linkedDiagramIds, withCurrentNames } from "./diagramLinks.js";
+import {
+  createDiagramLink,
+  linkTargetOfElement,
+  linkedDiagramIds,
+  withCurrentNames,
+} from "./diagramLinks.js";
 import { LiveSession } from "./live.js";
 import {
   editIdFor,
   forgetDiagram,
+  forgetEditId,
   linkTargetOf,
   recentDiagrams,
   rememberDiagram,
+  rememberEditId,
   updateDiagram,
+  viewIdFor,
 } from "./recent.js";
 import { DiagramSync, fetchSceneFiles, sceneKey, sharedSettings } from "./sync.js";
 
@@ -175,7 +183,11 @@ function CopyLinkButton({ label, link, title, primary = false }) {
       className={`top-pill share-button${primary ? " share-button--primary" : ""}`}
       disabled={!link}
       title={link ? title : NOT_SAVED_TITLE}
-      onClick={async () => {
+      onClick={async (event) => {
+        // After a mouse click, hand the keyboard back to the canvas, so the
+        // next space bar tap switches mode instead of pressing this again.
+        // (A click made from the keyboard has no click count; leave focus be.)
+        if (event.detail > 0) focusCanvas();
         await copyLink(link);
         setCopied(true);
       }}
@@ -392,7 +404,29 @@ function ShareMenuItems({ viewLink, editLink, canEdit }) {
   );
 }
 
+/**
+ * Opens the diagram named in the address.
+ *
+ * The address says how the diagram is being used: its editing id while
+ * editing, its read-only id while viewing. If the address holds a read-only
+ * id and this browser knows the editing id for the same diagram, the diagram
+ * is opened with full access but starts in view mode, so "Edit" is one tap away.
+ */
 export default function Editor({ id }) {
+  const [access] = useState(() => {
+    const editId = editIdFor(id);
+    return editId ? { id: editId, startViewing: true } : { id, startViewing: false };
+  });
+  return <OpenDiagram id={access.id} addressId={id} startViewing={access.startViewing} />;
+}
+
+/**
+ * @param {object} props
+ * @param {string} props.id the id to work with: the editing id when this browser has it
+ * @param {string} props.addressId the id in the address when the page was opened
+ * @param {boolean} props.startViewing open in view mode (the address held the read-only id)
+ */
+function OpenDiagram({ id, addressId, startViewing }) {
   const [loaded, setLoaded] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [api, setApi] = useState(null);
@@ -421,6 +455,13 @@ export default function Editor({ id }) {
     loadDiagram(id).then(
       (result) => {
         if (cancelled) return;
+        if (id !== addressId && !result.exists) {
+          // The editing id this browser had on record is not a diagram. Forget
+          // it and open what the address actually says.
+          forgetEditId(id);
+          window.location.reload();
+          return;
+        }
         setLoaded(result);
         setViewId(result.viewId);
         setTitle(result.savedSettings.name);
@@ -428,7 +469,10 @@ export default function Editor({ id }) {
       (error) => {
         if (cancelled) return;
         // A deleted diagram has no place among the ones to go back to.
-        if (error instanceof DeletedError) forgetDiagram(id);
+        if (error instanceof DeletedError) {
+          forgetDiagram(id);
+          forgetEditId(id);
+        }
         setLoadError(error);
       },
     );
@@ -506,7 +550,9 @@ export default function Editor({ id }) {
     if (exists) updateDiagram(id, { name: title.trim() });
   }, [exists, id, title]);
   useEffect(() => {
-    if (deleted) forgetDiagram(id);
+    if (!deleted) return;
+    forgetDiagram(id);
+    forgetEditId(id);
   }, [deleted, id]);
 
   // Labels of links to other diagrams follow those diagrams' names. Checked
@@ -549,38 +595,26 @@ export default function Editor({ id }) {
   }, []);
 
   // Links to other diagrams on this server open in place, after saving.
-  const onLinkOpen = useCallback((element, event) => {
-    let url;
-    try {
-      url = new URL(element.link, window.location.href);
-    } catch {
-      return;
-    }
-    if (url.origin !== window.location.origin || !isDiagramId(url.pathname.slice(1))) return;
-    // Links between diagrams carry read-only ids, so they never hand out edit
-    // access. Someone who can already edit the target still lands there.
-    const editId = editIdFor(url.pathname.slice(1));
-    if (editId) url.pathname = `/${editId}`;
-
-    event.preventDefault();
-    const { nativeEvent } = event.detail;
-    if (nativeEvent.ctrlKey || nativeEvent.metaKey) {
-      window.open(url.href, "_blank", "noopener");
-      return;
-    }
-    const go = () => window.location.assign(url.href);
-    (syncRef.current?.flush() ?? Promise.resolve()).then(go, go);
-  }, []);
-
   // Which dialog is open: "open" (go to a recent diagram), "link" (add a link to one), or null.
   const [picker, setPicker] = useState(null);
 
   // An editor can flip to view mode and back: nothing can be changed by
   // accident, dragging pans, and the laser is at hand. This is local to this
   // window; a read-only page is always in view mode.
-  const [viewMode, setViewMode] = useState(false);
+  const [viewMode, setViewMode] = useState(startViewing);
   const viewing = Boolean(loaded?.readOnly) || viewMode;
   const canToggleView = Boolean(loaded) && !loaded.readOnly;
+
+  // The address follows the mode: the read-only id while an editor is
+  // viewing (once the diagram has one), the editing id otherwise. Whatever is
+  // in the address bar is then safe to share for what it shows.
+  useEffect(() => {
+    if (!loaded) return;
+    const shown = viewMode && !loaded.readOnly && viewId ? viewId : id;
+    if (window.location.pathname !== `/${shown}`) {
+      window.history.replaceState(null, "", `/${shown}`);
+    }
+  }, [loaded, viewMode, viewId, id]);
 
   // A tap on the space bar switches between editing and viewing. Excalidraw
   // uses a held space bar for panning, so only a short press with no mouse
@@ -622,11 +656,55 @@ export default function Editor({ id }) {
     };
   }, [canToggleView]);
 
-  const openRecent = (entry) => {
-    setPicker(null);
-    const go = () => window.location.assign(`/${entry.id}`);
+  /**
+   * Goes to another diagram, keeping the current mode where possible:
+   * someone editing lands on the editable page if they may edit the target,
+   * someone viewing lands on its read-only page.
+   * @param {{view?: string, edit?: string}} target the ids known for it
+   */
+  const goToDiagram = (target, { newTab = false } = {}) => {
+    const edit = target.edit ?? (target.view ? editIdFor(target.view) : null);
+    // Remember that this browser may edit it, so its read-only page can offer "Edit".
+    if (target.view && edit) rememberEditId(target.view, edit);
+    const address = `/${(!viewing && edit) || target.view || edit}`;
+    if (newTab) {
+      window.open(address, "_blank", "noopener");
+      return;
+    }
+    const go = () => window.location.assign(address);
     (syncRef.current?.flush() ?? Promise.resolve()).then(go, go);
   };
+
+  // Links to other diagrams on this server open in place, after saving.
+  const onLinkOpen = (element, event) => {
+    let url;
+    try {
+      url = new URL(element.link, window.location.href);
+    } catch {
+      return;
+    }
+    const linked = url.pathname.slice(1);
+    if (url.origin !== window.location.origin || !isDiagramId(linked)) return;
+
+    // A hexagon says which ids it carries. For a link someone typed in, work
+    // out what kind of id it is from what this browser has seen.
+    const known = viewIdFor(linked);
+    const target =
+      linkTargetOfElement(element) ??
+      (editIdFor(linked) ? { view: linked } : known ? { view: known, edit: linked } : { edit: linked });
+
+    event.preventDefault();
+    const { nativeEvent } = event.detail;
+    goToDiagram(target, { newTab: nativeEvent.ctrlKey || nativeEvent.metaKey });
+  };
+
+  const openRecent = (entry) => {
+    setPicker(null);
+    goToDiagram(entry.readOnly ? { view: entry.id } : { view: entry.viewId ?? undefined, edit: entry.id });
+  };
+
+  // Whether new links should let this diagram's editors edit the linked one too.
+  const [linkForEditing, setLinkForEditing] = useState(true);
 
   // Adds a link to the chosen diagram in the middle of what is on screen, selected.
   const addDiagramLink = (entry) => {
@@ -637,7 +715,12 @@ export default function Editor({ id }) {
       { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 },
       appState,
     );
-    const link = createDiagramLink({ viewId: linkTargetOf(entry), name: entry.name, centre });
+    const link = createDiagramLink({
+      view: linkTargetOf(entry),
+      edit: linkForEditing && !entry.readOnly ? entry.id : undefined,
+      name: entry.name,
+      centre,
+    });
     api.updateScene({
       elements: [...api.getSceneElementsIncludingDeleted(), ...link.elements],
       appState: {
@@ -735,13 +818,13 @@ export default function Editor({ id }) {
   const readOnlyLink = deleted
     ? null
     : loaded.readOnly
-      ? window.location.href
+      ? `${window.location.origin}/${id}`
       : viewId && `${window.location.origin}/${viewId}`;
 
   // Sharing an editing link to a diagram the server has never seen would be
   // odd, so it also waits for the first save (which is when viewId arrives).
   const canEdit = !loaded.readOnly;
-  const editLink = canEdit && viewId && !deleted ? window.location.href : null;
+  const editLink = canEdit && viewId && !deleted ? `${window.location.origin}/${id}` : null;
   // Every recent diagram except this one (under either of its ids).
   const others = picker
     ? recentDiagrams().filter((entry) => entry.id !== id && linkTargetOf(entry) !== (loaded.readOnly ? id : viewId))
@@ -767,12 +850,38 @@ export default function Editor({ id }) {
       {picker === "link" && (
         <DiagramPicker
           title="Link to a diagram"
-          hint="Adds a hexagon that opens the chosen diagram. People who follow it get the read-only page unless they can already edit that diagram."
+          hint="Adds a hexagon that opens the chosen diagram."
           entries={others.filter(linkTargetOf)}
           emptyText="No other diagrams have been opened in this browser yet. Open or create the one you want to link to, then come back."
           onPick={addDiagramLink}
           onClose={() => setPicker(null)}
-        />
+        >
+          <fieldset className="picker__choice">
+            <legend>People who can edit this diagram get the linked one</legend>
+            <label>
+              <input
+                type="radio"
+                name="link-mode"
+                checked={linkForEditing}
+                onChange={() => setLinkForEditing(true)}
+              />
+              for editing
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="link-mode"
+                checked={!linkForEditing}
+                onChange={() => setLinkForEditing(false)}
+              />
+              read-only
+            </label>
+            <p>
+              People viewing this diagram always get it read-only, and so do links to diagrams
+              marked Read-only below.
+            </p>
+          </fieldset>
+        </DiagramPicker>
       )}
       <Excalidraw
         excalidrawAPI={setApi}

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { withoutEditLinks } from "./links.js";
 
 const HEARTBEAT_MS = 30_000;
 const HELLO_TIMEOUT_MS = 10_000;
@@ -90,7 +91,18 @@ export function createLiveRooms() {
             : {}),
         };
       }
-      if (out.elements || out.settings) broadcast(roomId, out, client);
+      if (!out.elements && !out.settings) return;
+      // Read-only connections get the same update minus any editing ids
+      // carried by links to other diagrams.
+      const safe = out.elements ? { ...out, elements: withoutEditLinks(out.elements) } : out;
+      if (safe.elements === out.elements) {
+        broadcast(roomId, out, client);
+      } else {
+        const [full, stripped] = [JSON.stringify(out), JSON.stringify(safe)];
+        for (const other of rooms.get(roomId) ?? []) {
+          if (other !== client) send(other, other.readOnly ? stripped : full);
+        }
+      }
     } else if (message.t === "pointer") {
       if (!Number.isFinite(message.x) || !Number.isFinite(message.y)) return;
       broadcast(

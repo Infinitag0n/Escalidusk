@@ -4,8 +4,9 @@ import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 // it. Excalidraw has no way to add new kinds of shape, so the hexagon is one
 // of its own closed lines (which it fills like any shape) grouped with a text
 // element. Both carry a marker in `customData` naming the diagram they point
-// to, always by its read-only id: the scene is visible to everyone with the
-// read-only link, so an editing id in it would hand out edit access.
+// to by its read-only id. The hexagon's marker may also carry the editing id,
+// so that people who can edit this diagram can edit the linked one too; the
+// server removes it from anything it sends to a read-only reader.
 
 const FILL = "#d0bfff";
 const MIN_WIDTH = 220;
@@ -30,12 +31,13 @@ const labelTargetOf = (element) => element.customData?.escalidusk?.diagramLinkLa
 /**
  * Builds the two elements of a link to another diagram, centred on a point.
  * @param {object} options
- * @param {string} options.viewId the target diagram's read-only id
+ * @param {string} options.view the target diagram's read-only id
+ * @param {string} [options.edit] its editing id, to let editors of this diagram edit it too
  * @param {string} options.name the target diagram's name
  * @param {{x: number, y: number}} options.centre in scene coordinates
  * @returns {{elements: object[], groupId: string}}
  */
-export function createDiagramLink({ viewId, name, centre }) {
+export function createDiagramLink({ view, edit, name, centre }) {
   const text = labelFor(name);
   const measured = measure(text);
   const width = Math.max(MIN_WIDTH, Math.ceil(measured.width) + SIDE_ROOM);
@@ -64,8 +66,9 @@ export function createDiagramLink({ viewId, name, centre }) {
       backgroundColor: FILL,
       fillStyle: "solid",
       groupIds: [groupId],
-      link: `/${viewId}`,
-      customData: { escalidusk: { diagramLink: viewId } },
+      // The plain link is always the read-only one; it is what any Excalidraw shows.
+      link: `/${view}`,
+      customData: { escalidusk: { diagramLink: { view, ...(edit ? { edit } : {}) } } },
     },
     {
       type: "text",
@@ -74,10 +77,20 @@ export function createDiagramLink({ viewId, name, centre }) {
       y: centre.y - measured.height / 2,
       fontSize: FONT_SIZE,
       groupIds: [groupId],
-      customData: { escalidusk: { diagramLinkLabel: viewId } },
+      customData: { escalidusk: { diagramLinkLabel: view } },
     },
   ]);
   return { elements, groupId };
+}
+
+/**
+ * The diagram a link element points to, as `{ view, edit? }`, or null for
+ * any other element.
+ */
+export function linkTargetOfElement(element) {
+  const marker = element.customData?.escalidusk?.diagramLink;
+  if (typeof marker === "string") return { view: marker }; // links made before editing ids could be carried
+  return typeof marker?.view === "string" ? { view: marker.view, edit: marker.edit } : null;
 }
 
 /** The read-only ids of every diagram the scene links to. */

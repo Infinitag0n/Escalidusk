@@ -423,3 +423,33 @@ body,
   align-items: center;
   gap: 0.35rem;
 }
+
+/* The choice at the top of the "Link to a diagram" dialog. */
+.picker__choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--list-line);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.picker__choice legend {
+  padding: 0 0.3rem;
+  color: var(--list-muted);
+}
+
+.picker__choice label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.picker__choice p {
+  flex-basis: 100%;
+  margin: 0.25rem 0 0;
+  color: var(--list-muted);
+}
