@@ -26,7 +26,7 @@ export default function Home() {
           New diagram
         </a>
       </header>
-      <h2>Recently opened in this browser</h2>
+      <h2>Recently opened</h2>
       <DiagramList
         entries={entries}
         emptyText="Nothing here any more. Start a new diagram."

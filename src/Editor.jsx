@@ -846,7 +846,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
           dark={dark}
           title="Open a recent diagram"
           entries={others}
-          emptyText="No other diagrams opened in this browser yet."
+          emptyText="No other diagrams opened yet."
           onPick={openRecent}
           onClose={() => setPicker(null)}
         />
@@ -857,7 +857,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
           title="Connect to a diagram"
           hint="Adds a hexagon that opens the diagram you pick."
           entries={others.filter(linkTargetOf)}
-          emptyText="No other diagrams opened in this browser yet. Open the one you want first."
+          emptyText="No other diagrams opened yet. Open the one you want first."
           onPick={addDiagramLink}
           onClose={() => setPicker(null)}
         >

@@ -121,7 +121,7 @@ test("the picker closes with Escape and says when there is nothing to offer", as
   await page.locator('[data-testid="main-menu-trigger"]').click();
   await page.getByRole("button", { name: "Open recent…" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("No other diagrams opened in this browser yet.");
+  await expect(dialog).toContainText("No other diagrams opened yet.");
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 });
