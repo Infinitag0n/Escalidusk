@@ -9,7 +9,7 @@ import {
   viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
-import { fetchDiagram, isDiagramId, newDiagramId } from "./api.js";
+import { DeletedError, fetchDiagram, isDiagramId, newDiagramId } from "./api.js";
 import { LiveSession } from "./live.js";
 import { DiagramSync, fetchSceneFiles, sceneKey, sharedSettings } from "./sync.js";
 
@@ -96,6 +96,7 @@ const STATUSES = {
   unsaved: { label: "Unsaved", title: "Changes will be saved in a moment" },
   saving: { label: "Saving…", title: "Saving changes" },
   error: { label: "Save failed", title: "Saving failed. Retrying automatically." },
+  deleted: { label: "Deleted", title: "This diagram was deleted. Changes are no longer saved." },
 };
 
 /**
@@ -105,9 +106,15 @@ const STATUSES = {
  */
 function SaveStatus({ status, readOnly }) {
   if (readOnly) {
+    const gone = status === "deleted";
     return (
-      <div className="top-pill save-status" role="status" title="You are viewing a read-only link">
-        <span>Read-only</span>
+      <div
+        className={`top-pill save-status${gone ? " save-status--deleted" : ""}`}
+        role="status"
+        data-status={gone ? "deleted" : "readonly"}
+        title={gone ? STATUSES.deleted.title : "You are viewing a read-only link"}
+      >
+        <span>{gone ? "Deleted" : "Read-only"}</span>
       </div>
     );
   }
@@ -365,6 +372,8 @@ export default function Editor({ id }) {
   // Our display name as typed. Empty while being retyped; storage and the
   // other people only ever get a non-empty name.
   const [username, setUsername] = useState(localUsername);
+  // Set if an administrator deletes the diagram while it is open here.
+  const [deleted, setDeleted] = useState(false);
   // Whether the laser pointer is the active tool (it can also be switched with K).
   const [laserActive, setLaserActive] = useState(false);
   // How many other people have this diagram open right now.
@@ -402,6 +411,7 @@ export default function Editor({ id }) {
       readOnly: loaded.readOnly,
       onViewId: setViewId,
       userId: localUserId(),
+      onDeleted: () => setDeleted(true),
     });
     syncRef.current = sync;
     const live = new LiveSession({
@@ -535,6 +545,15 @@ export default function Editor({ id }) {
     if (!focused && api) setTitle(api.getAppState().name ?? "");
   };
 
+  if (loadError instanceof DeletedError) {
+    return (
+      <div className="notice">
+        <h1>This diagram was deleted</h1>
+        <p>It was removed by an administrator and can no longer be opened.</p>
+        <a href="/">Start a new diagram</a>
+      </div>
+    );
+  }
   if (loadError) {
     return (
       <div className="notice">
@@ -551,17 +570,26 @@ export default function Editor({ id }) {
   }
 
   // A viewer is already on the read-only link. An editor gets one after the first save.
-  const readOnlyLink = loaded.readOnly
-    ? window.location.href
-    : viewId && `${window.location.origin}/${viewId}`;
+  // Links to a deleted diagram lead nowhere, so they are not offered.
+  const readOnlyLink = deleted
+    ? null
+    : loaded.readOnly
+      ? window.location.href
+      : viewId && `${window.location.origin}/${viewId}`;
 
   // Sharing an editing link to a diagram the server has never seen would be
   // odd, so it also waits for the first save (which is when viewId arrives).
   const canEdit = !loaded.readOnly;
-  const editLink = canEdit && viewId ? window.location.href : null;
+  const editLink = canEdit && viewId && !deleted ? window.location.href : null;
 
   return (
     <div className="editor" onPointerDownCapture={onPointerDownCapture} onKeyDown={onKeyDown}>
+      {deleted && (
+        <div className="deleted-banner" role="alert">
+          This diagram was deleted by an administrator. What you see is your copy; nothing is saved
+          any more. Use the menu to export it if you need it.
+        </div>
+      )}
       <Excalidraw
         excalidrawAPI={setApi}
         initialData={loaded.initialData}

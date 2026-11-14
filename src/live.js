@@ -3,6 +3,7 @@ import { sharedSettings } from "./sync.js";
 const POINTER_INTERVAL_MS = 50;
 const LASER_INTERVAL_MS = 16; // a laser stroke needs more points than a cursor does
 const LASER_FADE_MS = 1500; // how long a finished stroke is left to fade out
+const DIAGRAM_DELETED = 4410; // the server's close code for "this diagram was deleted"
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 
@@ -178,8 +179,12 @@ export class LiveSession {
       }
       this.#receive(message);
     };
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (this.#socket !== socket || this.#disposed) return;
+      if (event.code === DIAGRAM_DELETED) {
+        this.#stopForDeletion();
+        return;
+      }
       this.#ready = false;
       this.#peers.clear();
       this.#publishPeers();
@@ -187,6 +192,15 @@ export class LiveSession {
       this.#retryTimer = setTimeout(() => this.#connect(), this.#retryDelay);
       this.#retryDelay = Math.min(this.#retryDelay * 2, RECONNECT_MAX_MS);
     };
+  }
+
+  /** The diagram is gone: tell the sync layer and do not come back. */
+  #stopForDeletion() {
+    this.#ready = false;
+    this.#peers.clear();
+    this.#publishPeers();
+    this.#sync.markDeleted();
+    this.dispose();
   }
 
   #send(message) {
@@ -251,6 +265,9 @@ export class LiveSession {
         this.#publishPeers();
         break;
       }
+      case "deleted":
+        this.#stopForDeletion();
+        break;
       case "saved":
         this.#sync.noteRemoteSave(message.version, message.key, message.viewId);
         break;

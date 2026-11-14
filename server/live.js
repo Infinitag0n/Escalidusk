@@ -4,6 +4,7 @@ const HEARTBEAT_MS = 30_000;
 const HELLO_TIMEOUT_MS = 10_000;
 const OPEN = 1; // WebSocket.readyState of an open socket
 const POLICY_VIOLATION = 1008; // WebSocket close code
+export const DIAGRAM_DELETED = 4410; // our own close code: the diagram no longer exists
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** A display name as shown to other people: trimmed, bounded, never empty. */
@@ -213,6 +214,19 @@ export function createLiveRooms() {
      */
     notifySaved(roomId, version, key, viewId) {
       broadcast(roomId, { t: "saved", version, key, viewId });
+    },
+
+    /** How many connections each diagram with anyone on it has right now. */
+    presence() {
+      return new Map([...rooms].map(([roomId, room]) => [roomId, room.size]));
+    },
+
+    /** Tells everyone on a diagram that it was deleted, and disconnects them. */
+    closeRoom(roomId) {
+      const room = rooms.get(roomId);
+      if (!room) return;
+      broadcast(roomId, { t: "deleted" });
+      for (const client of [...room]) client.socket.close(DIAGRAM_DELETED, "diagram deleted");
     },
 
     close() {

@@ -30,11 +30,23 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `HOST`     | `0.0.0.0` | Address the server binds to     |
 | `DATA_DIR` | `/data`   | Folder holding the database     |
 
+| `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`. Without it the backoffice does not exist |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so the visitor's address is read from `X-Forwarded-For` |
 | `ADDRESS_RETENTION_DAYS` | `90` | How long user-to-address links are kept |
 | `ADDRESS_SECRET` | generated | Key for hashing addresses. By default one is made up and stored in the database |
 
 Live collaboration uses a WebSocket at `/api/diagrams/<id>/live`. Behind a reverse proxy, make sure WebSocket upgrades are passed through, or people will only see each other's changes after a save.
+
+## Backoffice
+
+Setting `ADMIN_PASSWORD` switches on a backoffice at `<url>/admin`. After signing in with that password you can:
+
+- see every diagram, with who created and last changed it, its size, and how many people have it open, and open any of them;
+- delete a diagram. This is permanent. Its links then say it was deleted, and anyone who has it open is told and keeps their copy on screen, but can no longer save it;
+- see the people the server knows about (see below), with how many addresses each was seen from and how many other people share one;
+- remove images that no diagram uses any more.
+
+The password is the only protection, and whoever has it can open and delete everything, so use a long one and serve the site over HTTPS. Five wrong passwords lock sign-in for five minutes. A session lasts twelve hours and is lost when the server restarts.
 
 ## What is recorded about people
 
@@ -45,7 +57,7 @@ There are no accounts. To give some continuity, and a way to deal with gross mis
 - **Who created and who last edited each diagram**, by user id.
 - **Which network addresses a user id was seen from**, stored only as keyed hashes, never the address itself, and deleted after `ADDRESS_RETENTION_DAYS` without being seen. Addresses are also kept out of the server log.
 
-This identity is a soft one. Clearing browser storage creates a new user, and nothing stops two people from sharing an id on purpose, so it is never used to decide what someone may do. The address hashes are pseudonymous rather than anonymous: someone holding both the database and the hashing key could test a specific address against them. Nothing in the app displays any of this yet; it is in the database for an administrator to query.
+This identity is a soft one. Clearing browser storage creates a new user, and nothing stops two people from sharing an id on purpose, so it is never used to decide what someone may do. The address hashes are pseudonymous rather than anonymous: someone holding both the database and the hashing key could test a specific address against them. The backoffice shows names, activity and address counts; it never shows a private id or an address hash.
 
 ## Develop
 
@@ -73,8 +85,8 @@ Running `docker compose watch` instead of `docker compose up` rebuilds and resta
 
 ## Layout
 
-- `server/` — Fastify server: diagram and image API, serves the built frontend. `store.js` is the SQLite layer, `live.js` the collaboration rooms, `address.js` the address hashing.
-- `src/` — React app around the `@excalidraw/excalidraw` editor. `sync.js` holds autosave, image upload and merging; `live.js` the collaboration connection.
+- `server/` — Fastify server: diagram and image API, serves the built frontend. `store.js` is the SQLite layer, `live.js` the collaboration rooms, `address.js` the address hashing, `admin.js` the backoffice API.
+- `src/` — React app around the `@excalidraw/excalidraw` editor. `sync.js` holds autosave, image upload and merging; `live.js` the collaboration connection. `src/admin/` is the backoffice page, built separately so it does not load the editor.
 - `tests/` — Playwright tests for the API and the editor.
 - `scripts/copy-assets.mjs` — copies Excalidraw's fonts into `public/` so nothing is fetched from a CDN.
 

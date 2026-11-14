@@ -34,7 +34,12 @@ export default defineConfig({
   webServer: {
     command: "npm run build && node --disable-warning=ExperimentalWarning server/index.js",
     url: `http://127.0.0.1:${PORT}/api/health`,
-    env: { PORT: String(PORT), DATA_DIR: process.env.ESCALIDUSK_TEST_DATA },
+    env: {
+      PORT: String(PORT),
+      DATA_DIR: process.env.ESCALIDUSK_TEST_DATA,
+      // Switches the backoffice on. tests/admin.spec.js signs in with the same value.
+      ADMIN_PASSWORD: "test-admin-password",
+    },
     reuseExistingServer: false,
     timeout: 120_000,
   },

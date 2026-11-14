@@ -4,6 +4,11 @@ services:
     image: escalidusk
     ports:
       - "3000:3000"
+    # environment:
+    #   # Switches on the backoffice at /admin (list and delete diagrams). Use a long one.
+    #   ADMIN_PASSWORD: change-me-to-something-long
+    #   # Needed behind a reverse proxy, so visitors are not all seen as the proxy.
+    #   TRUST_PROXY: "true"
     volumes:
       - escalidusk-data:/data
     restart: unless-stopped

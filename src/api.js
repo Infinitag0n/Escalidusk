@@ -16,7 +16,15 @@ export function newDiagramId() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** The diagram was deleted by an administrator: there is nothing left to load or save to. */
+export class DeletedError extends Error {
+  constructor() {
+    super("This diagram was deleted");
+  }
+}
+
 async function failure(response) {
+  if (response.status === 410) return new DeletedError();
   return new Error(`Request failed: ${response.status} ${response.statusText}`);
 }
 

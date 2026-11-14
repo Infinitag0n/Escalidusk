@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -25,7 +25,8 @@ const SEEN_WRITE_INTERVAL_MS = 5 * 60 * 1000;
  */
 export function openStore(dataDir) {
   mkdirSync(dataDir, { recursive: true });
-  const db = new DatabaseSync(path.join(dataDir, "escalidusk.db"));
+  const dbPath = path.join(dataDir, "escalidusk.db");
+  const db = new DatabaseSync(dbPath);
 
   db.exec(`
     PRAGMA journal_mode = WAL;
@@ -69,6 +70,15 @@ export function openStore(dataDir) {
       PRIMARY KEY (user_id, address_hash)
     ) WITHOUT ROWID;
     CREATE INDEX IF NOT EXISTS user_addresses_by_hash ON user_addresses (address_hash);
+
+    -- Ids of diagrams an administrator deleted. Kept so that their links say
+    -- "deleted" and an editor who still has one open cannot bring it back.
+    CREATE TABLE IF NOT EXISTS deleted_diagrams (
+      id         TEXT PRIMARY KEY,
+      view_id    TEXT,
+      deleted_at INTEGER NOT NULL
+    ) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS deleted_diagrams_view_id ON deleted_diagrams (view_id);
 
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
@@ -130,6 +140,75 @@ export function openStore(dataDir) {
     "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING",
   );
 
+  // --- Backoffice queries ---------------------------------------------------
+
+  const selectDeleted = db.prepare("SELECT 1 FROM deleted_diagrams WHERE id = ? OR view_id = ?");
+  const insertDeleted = db.prepare(
+    `INSERT INTO deleted_diagrams (id, view_id, deleted_at) VALUES (?, ?, ?)
+     ON CONFLICT (id) DO NOTHING`,
+  );
+  const deleteDiagramRow = db.prepare("DELETE FROM diagrams WHERE id = ?");
+  const deleteDiagramFiles = db.prepare("DELETE FROM files WHERE diagram_id = ?");
+
+  // The name lives inside the scene JSON; SQLite reads it out for listing and search.
+  const DIAGRAM_NAME = "COALESCE(json_extract(d.scene, '$.appState.name'), '')";
+  const DIAGRAM_MATCH = `($search = '' OR instr(lower(${DIAGRAM_NAME}), lower($search)) > 0 OR d.id = $search OR d.view_id = $search)`;
+  const selectDiagramList = db.prepare(
+    `SELECT d.id, d.view_id AS viewId, d.version,
+            d.created_at AS createdAt, d.updated_at AS updatedAt,
+            ${DIAGRAM_NAME} AS name,
+            json_array_length(d.scene, '$.elements') AS elementCount,
+            length(d.scene) AS sceneSize,
+            (SELECT COUNT(*) FROM files f WHERE f.diagram_id = d.id) AS imageCount,
+            (SELECT COALESCE(SUM(length(f.data)), 0) FROM files f WHERE f.diagram_id = d.id) AS imageSize,
+            creator.display_name AS createdBy, editor.display_name AS updatedBy
+     FROM diagrams d
+     LEFT JOIN users creator ON creator.id = d.created_by
+     LEFT JOIN users editor ON editor.id = d.updated_by
+     WHERE ${DIAGRAM_MATCH}
+     ORDER BY d.updated_at DESC, d.id
+     LIMIT $limit OFFSET $offset`,
+  );
+  const countDiagramList = db.prepare(`SELECT COUNT(*) AS total FROM diagrams d WHERE ${DIAGRAM_MATCH}`);
+
+  const USER_MATCH = "($search = '' OR instr(lower(u.display_name), lower($search)) > 0 OR u.public_id = $search)";
+  const selectUserList = db.prepare(
+    `SELECT u.public_id AS publicId, u.display_name AS name,
+            u.first_seen AS firstSeen, u.last_seen AS lastSeen,
+            (SELECT COUNT(*) FROM diagrams d WHERE d.created_by = u.id) AS created,
+            (SELECT COUNT(*) FROM diagrams d WHERE d.updated_by = u.id) AS lastEditorOf,
+            (SELECT COUNT(*) FROM user_addresses a WHERE a.user_id = u.id) AS addressCount,
+            (SELECT COUNT(DISTINCT other.user_id)
+               FROM user_addresses mine
+               JOIN user_addresses other
+                 ON other.address_hash = mine.address_hash AND other.user_id <> mine.user_id
+              WHERE mine.user_id = u.id) AS sharesAddressWith
+     FROM users u
+     WHERE ${USER_MATCH}
+     ORDER BY u.last_seen DESC, u.id
+     LIMIT $limit OFFSET $offset`,
+  );
+  const countUserList = db.prepare(`SELECT COUNT(*) AS total FROM users u WHERE ${USER_MATCH}`);
+
+  // An image is orphaned when no element of its diagram mentions it any more
+  // (deleted elements still count while they are kept, so undo keeps working),
+  // or when its diagram does not exist. Recent uploads are left alone: an
+  // image is uploaded moments before the save that first refers to it.
+  const ORPHANED_IMAGE = `files.created_at < $before AND NOT EXISTS (
+      SELECT 1 FROM diagrams d, json_each(d.scene, '$.elements') element
+      WHERE d.id = files.diagram_id AND json_extract(element.value, '$.fileId') = files.file_id)`;
+  const selectOrphanedImages = db.prepare(
+    `SELECT COUNT(*) AS count, COALESCE(SUM(length(data)), 0) AS size FROM files WHERE ${ORPHANED_IMAGE}`,
+  );
+  const deleteOrphanedImages = db.prepare(`DELETE FROM files WHERE ${ORPHANED_IMAGE}`);
+  const selectTotals = db.prepare(
+    `SELECT (SELECT COUNT(*) FROM diagrams) AS diagrams,
+            (SELECT COUNT(*) FROM deleted_diagrams) AS deletedDiagrams,
+            (SELECT COUNT(*) FROM users) AS users,
+            (SELECT COUNT(*) FROM files) AS images,
+            (SELECT COALESCE(SUM(length(data)), 0) FROM files) AS imageSize`,
+  );
+
   // user id -> { publicId, name, addresses: Map(address hash -> time last written) }
   const recentlySeen = new Map();
 
@@ -176,6 +255,71 @@ export function openStore(dataDir) {
     /** Files are immutable: storing an existing id again is a no-op. */
     putFile(diagramId, fileId, mimeType, data) {
       insertFile.run(diagramId, fileId, mimeType, data, Date.now());
+    },
+
+    /** True if an administrator deleted the diagram with this editing or read-only id. */
+    isDeleted(anyId) {
+      return selectDeleted.get(anyId, anyId) !== undefined;
+    },
+
+    /**
+     * Deletes a diagram and its images for good, remembering its ids as deleted.
+     * @returns {boolean} false if there was no such diagram
+     */
+    deleteDiagram(id) {
+      const row = selectById.get(id);
+      if (!row) return false;
+      db.exec("BEGIN");
+      try {
+        insertDeleted.run(id, row.viewId, Date.now());
+        deleteDiagramFiles.run(id);
+        deleteDiagramRow.run(id);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return true;
+    },
+
+    /**
+     * Diagrams for the backoffice, most recently changed first. `search`
+     * matches part of the name, or a whole editing or read-only id.
+     * @returns {{total: number, diagrams: object[]}}
+     */
+    listDiagrams({ search = "", limit = 50, offset = 0 } = {}) {
+      return {
+        total: countDiagramList.get({ $search: search }).total,
+        diagrams: selectDiagramList.all({ $search: search, $limit: limit, $offset: offset }),
+      };
+    },
+
+    /**
+     * People for the backoffice, most recently seen first. Private ids are
+     * left out; `search` matches part of the name or a whole public id.
+     * @returns {{total: number, users: object[]}}
+     */
+    listUsers({ search = "", limit = 50, offset = 0 } = {}) {
+      return {
+        total: countUserList.get({ $search: search }).total,
+        users: selectUserList.all({ $search: search, $limit: limit, $offset: offset }),
+      };
+    },
+
+    /** Totals for the backoffice, plus what removeOrphanedImages() would free. */
+    stats() {
+      const orphaned = selectOrphanedImages.get({ $before: Date.now() - DAY_MS });
+      return {
+        ...selectTotals.get(),
+        orphanedImages: orphaned.count,
+        orphanedImageSize: orphaned.size,
+        databaseSize: statSync(dbPath).size,
+      };
+    },
+
+    /** Deletes images nothing refers to any more. Returns how many were removed. */
+    removeOrphanedImages() {
+      return Number(deleteOrphanedImages.run({ $before: Date.now() - DAY_MS }).changes);
     },
 
     /**

@@ -5,7 +5,8 @@ import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import { createAddressHasher } from "./address.js";
-import { createLiveRooms } from "./live.js";
+import { registerAdmin } from "./admin.js";
+import { DIAGRAM_DELETED, createLiveRooms } from "./live.js";
 import { openStore } from "./store.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -18,6 +19,8 @@ const TRUST_PROXY = process.env.TRUST_PROXY === "true";
 // How long to remember which (hashed) addresses a user was seen from.
 const ADDRESS_RETENTION_DAYS = Number(process.env.ADDRESS_RETENTION_DAYS ?? 90);
 const DAY_MS = 24 * 60 * 60 * 1000;
+// The backoffice at /admin exists only when this is set.
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 
 const MAX_SCENE_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
@@ -83,14 +86,21 @@ function userIdOf(request) {
   return typeof value === "string" && UUID_RE.test(value) ? value : null;
 }
 
+const DELETED = { error: "deleted" };
+
 app.get("/api/health", async () => ({ ok: true }));
+
+registerAdmin(app, { store, live, password: ADMIN_PASSWORD });
 
 app.get("/api/diagrams/:id", async (request, reply) => {
   const { id } = request.params;
   if (!UUID_RE.test(id)) return reply.code(400).send({ error: "invalid diagram id" });
 
   const found = store.findDiagram(id);
-  if (!found) return reply.code(404).send({ error: "not found" });
+  if (!found) {
+    if (store.isDeleted(id)) return reply.code(410).send(DELETED);
+    return reply.code(404).send({ error: "not found" });
+  }
   return reply
     .type("application/json; charset=utf-8")
     .send(diagramJson(found.row, found.readOnly));
@@ -102,6 +112,8 @@ app.put("/api/diagrams/:id", async (request, reply) => {
 
   // Also stops anyone creating a diagram whose id would shadow a read-only link.
   if (store.isViewId(id)) return reply.code(403).send({ error: "this link is read-only" });
+  // A deleted diagram stays deleted, even for someone who still has it open.
+  if (store.isDeleted(id)) return reply.code(410).send(DELETED);
 
   const body = request.body;
   if (
@@ -142,6 +154,10 @@ app.get("/api/diagrams/:id/live", { websocket: true }, (socket, request) => {
     socket.close(1008, "invalid diagram id");
     return;
   }
+  if (store.isDeleted(id)) {
+    socket.close(DIAGRAM_DELETED, "diagram deleted");
+    return;
+  }
   const found = store.findDiagram(id);
   // An unknown id is a diagram that has not been saved yet; its room is the id itself.
   const addressHash = hashAddress(request.ip);
@@ -177,6 +193,7 @@ app.put("/api/diagrams/:id/files/:fileId", async (request, reply) => {
   }
 
   if (store.isViewId(id)) return reply.code(403).send({ error: "this link is read-only" });
+  if (store.isDeleted(id)) return reply.code(410).send(DELETED);
 
   const mimeType = String(request.headers["content-type"] ?? "")
     .split(";")[0]
@@ -211,7 +228,8 @@ if (existsSync(DIST_DIR)) {
     if (request.method !== "GET" || request.url.startsWith("/api/")) {
       return reply.code(404).send({ error: "not found" });
     }
-    return reply.sendFile("index.html");
+    const page = /^\/admin\/?(\?|$)/.test(request.url) ? "admin.html" : "index.html";
+    return reply.sendFile(page);
   });
 } else {
   app.log.warn(`No frontend build at ${DIST_DIR}; serving the API only.`);

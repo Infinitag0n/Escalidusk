@@ -4,7 +4,7 @@ import {
   reconcileElements,
   restoreElements,
 } from "@excalidraw/excalidraw";
-import { fetchDiagram, fetchFile, saveDiagram, uploadFile } from "./api.js";
+import { DeletedError, fetchDiagram, fetchFile, saveDiagram, uploadFile } from "./api.js";
 
 const SAVE_DELAY_MS = 1000; // quiet time after the last change before saving
 const MAX_SAVE_WAIT_MS = 5000; // ...but never hold unsaved changes longer than this
@@ -94,6 +94,8 @@ export class DiagramSync {
   #saving = false;
   #failed = false; // the last save failed and a retry is scheduled
   #refreshing = false;
+  #deleted = false; // an administrator deleted the diagram; nothing more is saved
+  #onDeleted;
   #disposed = false;
   #timer = null;
 
@@ -109,6 +111,7 @@ export class DiagramSync {
    * @param {boolean} [options.readOnly] opened through a read-only link
    * @param {(viewId: string) => void} [options.onViewId] told the read-only id after each save
    * @param {string} [options.userId] this browser's private user id, sent with saves
+   * @param {() => void} [options.onDeleted] told once if the diagram turns out to be deleted
    */
   constructor({
     id,
@@ -121,6 +124,7 @@ export class DiagramSync {
     readOnly = false,
     onViewId,
     userId,
+    onDeleted,
   }) {
     this.#id = id;
     this.#api = api;
@@ -132,11 +136,12 @@ export class DiagramSync {
     this.#readOnly = readOnly;
     this.#onViewId = onViewId;
     this.#userId = userId;
+    this.#onDeleted = onDeleted;
   }
 
   /** Call from Excalidraw's onChange. Cheap when nothing relevant changed. */
   handleChange(elements, appState, files) {
-    if (this.#disposed || this.#readOnly) return;
+    if (this.#disposed || this.#readOnly || this.#deleted) return;
     const key = sceneKey(elements, sharedSettings(appState));
     const changed = key !== this.#savedKey;
     if (!changed && !this.#hasFilesToUpload(elements, files)) return;
@@ -168,7 +173,22 @@ export class DiagramSync {
 
   /** True while there are changes of our own that the server does not have yet. */
   hasUnsaved() {
-    return this.#saving || (this.#dirty && !this.#remoteOnly);
+    return !this.#deleted && (this.#saving || (this.#dirty && !this.#remoteOnly));
+  }
+
+  /**
+   * The diagram no longer exists on the server. Stops saving for good; what
+   * is on the canvas stays, so it can still be exported.
+   */
+  markDeleted() {
+    if (this.#deleted) return;
+    this.#deleted = true;
+    this.#dirty = false;
+    clearTimeout(this.#timer);
+    this.#timer = null;
+    this.#status = "deleted";
+    this.#onStatus("deleted");
+    this.#onDeleted?.();
   }
 
   /** Saves now if there is anything to save. Safe to call at any time. */
@@ -176,7 +196,7 @@ export class DiagramSync {
     clearTimeout(this.#timer);
     this.#timer = null;
     // A save already in flight re-checks #dirty when it finishes.
-    if (this.#saving || this.#disposed || !this.#dirty) return;
+    if (this.#saving || this.#disposed || this.#deleted || !this.#dirty) return;
 
     this.#saving = true;
     this.#failed = false;
@@ -189,6 +209,10 @@ export class DiagramSync {
       this.#remoteOnly = false;
       this.#setStatus("saved");
     } catch (error) {
+      if (error instanceof DeletedError) {
+        this.markDeleted();
+        return;
+      }
       console.error("Saving the diagram failed", error);
       this.#dirty = true;
       this.#remoteOnly = false;
@@ -202,7 +226,7 @@ export class DiagramSync {
 
   /** Pulls in changes saved from elsewhere (another tab or person). */
   async refresh() {
-    if (this.#saving || this.#refreshing || this.#disposed) return;
+    if (this.#saving || this.#refreshing || this.#disposed || this.#deleted) return;
     this.#refreshing = true;
     try {
       const remote = await fetchDiagram(this.#id);
@@ -213,7 +237,8 @@ export class DiagramSync {
       // Nothing of our own to add, so what we now hold is what is stored.
       if (wasClean || identical) this.#markSaved(key);
     } catch (error) {
-      console.warn("Could not check for remote changes", error);
+      if (error instanceof DeletedError) this.markDeleted();
+      else console.warn("Could not check for remote changes", error);
     } finally {
       this.#refreshing = false;
     }
@@ -224,7 +249,7 @@ export class DiagramSync {
    * Works on read-only pages too, which is how viewers follow along.
    */
   applyRemote({ elements, settings }) {
-    if (this.#disposed) return;
+    if (this.#disposed || this.#deleted) return;
     const api = this.#api;
     const local = api.getSceneElementsIncludingDeleted();
     const localSettings = sharedSettings(api.getAppState());
@@ -251,7 +276,7 @@ export class DiagramSync {
    * and have nothing left to save; otherwise we fetch what we are missing.
    */
   noteRemoteSave(version, key, viewId) {
-    if (this.#disposed) return;
+    if (this.#disposed || this.#deleted) return;
     if (viewId) this.#onViewId?.(viewId);
     if (version <= this.#version) return;
     if (this.#currentKey() === key) {
