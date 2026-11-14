@@ -28,8 +28,8 @@ async function makeDiagram(page, request, name) {
  * footer button. The link is for editing unless `readOnly` is asked for.
  */
 async function addLink(page, targetName, { readOnly = false } = {}) {
-  await page.getByRole("button", { name: "Link diagram" }).click();
-  const dialog = page.getByRole("dialog", { name: "Link to a diagram" });
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Connect to a diagram" });
   await expect(dialog.getByRole("radio", { name: "for editing" })).toBeChecked();
   if (readOnly) await dialog.getByRole("radio", { name: "read-only" }).check();
   await dialog.getByRole("button", { name: new RegExp(targetName) }).click();
@@ -184,21 +184,21 @@ test("only other diagrams are offered, and a read-only page cannot add links", a
   request,
 }) => {
   await makeDiagram(page, request, "The only one");
-  await page.getByRole("button", { name: "Link diagram" }).click();
-  await expect(page.getByRole("dialog")).toContainText("No other diagrams have been opened");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("No other diagrams opened");
   await page.keyboard.press("Escape");
 
   // The menu offers the same thing.
   await page.locator('[data-testid="main-menu-trigger"]').click();
-  await expect(page.getByRole("button", { name: "Link to a diagram…" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect to a diagram…" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   const { viewId } = await seedDiagram(request, { elements: [rectangle()] });
   await openDiagram(page, viewId);
-  await expect(page.getByRole("button", { name: "Link diagram" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveCount(0);
   await page.locator('[data-testid="main-menu-trigger"]').click();
   await expect(page.getByRole("button", { name: "Open recent…" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Link to a diagram…" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Connect to a diagram…" })).toHaveCount(0);
 });
 
 test("following a link opens the editable page for someone who can edit the target", async ({

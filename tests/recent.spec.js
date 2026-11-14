@@ -121,7 +121,7 @@ test("the picker closes with Escape and says when there is nothing to offer", as
   await page.locator('[data-testid="main-menu-trigger"]').click();
   await page.getByRole("button", { name: "Open recent…" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("No other diagrams have been opened in this browser yet.");
+  await expect(dialog).toContainText("No other diagrams opened in this browser yet.");
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 });
@@ -134,4 +134,29 @@ test("a deleted diagram drops out of the history when it is opened", async ({ pa
   await page.goto(`/${id}`);
   await expect(page.getByRole("heading", { name: "This diagram was deleted" })).toBeVisible();
   expect(await recent(page)).toEqual([]);
+});
+
+test.describe("with the operating system in dark mode", () => {
+  test.use({ colorScheme: "dark" });
+
+  const background = (locator) => locator.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const openPicker = async (page) => {
+    await page.locator('[data-testid="main-menu-trigger"]').click();
+    await page.getByRole("button", { name: "Open recent…" }).click();
+    return page.getByRole("dialog");
+  };
+
+  test("the dialog matches the editor's theme, not the system's", async ({ page }) => {
+    await openDiagram(page);
+    // The editor is light by default, so the dialog is too.
+    let dialog = await openPicker(page);
+    expect(await background(dialog)).toBe("rgb(255, 255, 255)");
+    await page.keyboard.press("Escape");
+
+    await page.locator('[data-testid="main-menu-trigger"]').click();
+    await page.getByText("Dark mode").click();
+    await page.keyboard.press("Escape");
+    dialog = await openPicker(page);
+    expect(await background(dialog)).toBe("rgb(30, 30, 34)");
+  });
 });

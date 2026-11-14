@@ -193,7 +193,7 @@ test.describe("moving between diagrams keeps the current mode", () => {
   }) => {
     const target = await makeDiagram(page, request, "Target");
     const source = await makeDiagram(page, request, "Source");
-    await page.getByRole("button", { name: "Link diagram" }).click();
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
     await page.getByRole("dialog").getByRole("button", { name: /Target/ }).click();
     await expectStoredCount(request, source.id, 2);
     await expectStatus(page, "saved");

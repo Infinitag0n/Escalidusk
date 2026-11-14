@@ -32,7 +32,7 @@ test("a tap on the space bar switches between editing and viewing", async ({ pag
   await tapSpace(page);
   await expectViewing(page);
   // Viewing means nothing can be changed: no drawing, no link button, a name that is a label.
-  await expect(page.getByRole("button", { name: "Link diagram" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveCount(0);
   await expect(page.locator(".diagram-title--readonly")).toHaveText("Plan");
   await expect(page.getByRole("button", { name: "Laser" })).toBeVisible();
   // Still the editor's own page: saving status and both share buttons remain.

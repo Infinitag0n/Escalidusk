@@ -336,7 +336,7 @@ function UserNameField({ value, onEdit, onDone, onLinkDiagram }) {
         <button
           type="button"
           className="top-pill share-button link-diagram-button"
-          title="Add a link to another diagram"
+          title="Connect this diagram to another one"
           onClick={onLinkDiagram}
         >
           <span>
@@ -349,7 +349,7 @@ function UserNameField({ value, onEdit, onDone, onLinkDiagram }) {
                 strokeLinejoin="round"
               />
             </svg>
-            Link diagram
+            Connect
           </span>
         </button>
       )}
@@ -449,6 +449,8 @@ function OpenDiagram({ id, addressId, startViewing }) {
   const liveRef = useRef(null);
   const syncRef = useRef(null);
   const themeRef = useRef(null);
+  // Excalidraw's theme (its own setting, not the operating system's), so our dialogs can match it.
+  const [dark, setDark] = useState(() => readLocal(THEME_KEY, "light") === "dark");
 
   useEffect(() => {
     let cancelled = false;
@@ -590,6 +592,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
     if (!titleFocusedRef.current) setTitle(appState.name ?? "");
     if (appState.theme !== themeRef.current) {
       themeRef.current = appState.theme;
+      setDark(appState.theme === "dark");
       writeLocal(THEME_KEY, appState.theme);
     }
   }, []);
@@ -840,24 +843,26 @@ function OpenDiagram({ id, addressId, startViewing }) {
       )}
       {picker === "open" && (
         <DiagramPicker
+          dark={dark}
           title="Open a recent diagram"
           entries={others}
-          emptyText="No other diagrams have been opened in this browser yet."
+          emptyText="No other diagrams opened in this browser yet."
           onPick={openRecent}
           onClose={() => setPicker(null)}
         />
       )}
       {picker === "link" && (
         <DiagramPicker
-          title="Link to a diagram"
-          hint="Adds a hexagon that opens the chosen diagram."
+          dark={dark}
+          title="Connect to a diagram"
+          hint="Adds a hexagon that opens the diagram you pick."
           entries={others.filter(linkTargetOf)}
-          emptyText="No other diagrams have been opened in this browser yet. Open or create the one you want to link to, then come back."
+          emptyText="No other diagrams opened in this browser yet. Open the one you want first."
           onPick={addDiagramLink}
           onClose={() => setPicker(null)}
         >
           <fieldset className="picker__choice">
-            <legend>People who can edit this diagram get the linked one</legend>
+            <legend>Editors of this diagram open it</legend>
             <label>
               <input
                 type="radio"
@@ -876,10 +881,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
               />
               read-only
             </label>
-            <p>
-              People viewing this diagram always get it read-only, and so do links to diagrams
-              marked Read-only below.
-            </p>
+            <p>Viewers always get it read-only.</p>
           </fieldset>
         </DiagramPicker>
       )}
@@ -942,7 +944,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
             </MainMenu.Item>
           )}
           {canEdit && !deleted && !viewMode && (
-            <MainMenu.Item onSelect={() => setPicker("link")}>Link to a diagram…</MainMenu.Item>
+            <MainMenu.Item onSelect={() => setPicker("link")}>Connect to a diagram…</MainMenu.Item>
           )}
           <ShareMenuItems viewLink={readOnlyLink} editLink={editLink} canEdit={canEdit} />
           {!viewing && <MainMenu.DefaultItems.LoadScene />}

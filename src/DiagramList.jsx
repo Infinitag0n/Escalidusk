@@ -54,7 +54,7 @@ export function DiagramList({ entries, onPick, onForget, emptyText }) {
 }
 
 /** A small dialog over the editor for picking one of the recently opened diagrams. */
-export function DiagramPicker({ title, hint, entries, emptyText, onPick, onClose, children }) {
+export function DiagramPicker({ title, hint, entries, emptyText, onPick, onClose, dark, children }) {
   const ref = useRef(null);
   useEffect(() => {
     (ref.current?.querySelector(".diagram-list__item") ?? ref.current?.querySelector("button"))?.focus();
@@ -64,7 +64,7 @@ export function DiagramPicker({ title, hint, entries, emptyText, onPick, onClose
     <div className="picker-backdrop" onPointerDown={onClose}>
       <div
         ref={ref}
-        className="picker"
+        className={`picker${dark ? " picker--dark" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
