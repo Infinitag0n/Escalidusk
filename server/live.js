@@ -132,6 +132,7 @@ export function createLiveRooms() {
     client.privateUser = message.user;
     client.name = cleanName(message.name);
     client.publicUser = client.identify({ user: client.privateUser, name: client.name });
+    client.joined?.(client.privateUser);
 
     const { roomId } = client;
     let room = rooms.get(roomId);
@@ -178,8 +179,10 @@ export function createLiveRooms() {
      * @param {boolean} options.readOnly connected through a read-only id
      * @param {(who: {user: string, name: string}) => string} options.identify
      *   records the person (private id and display name) and returns their public id
+     * @param {(user: string) => void} [options.joined] called once, with the
+     *   private id, when the person has introduced themselves
      */
-    join(roomId, socket, { readOnly, identify }) {
+    join(roomId, socket, { readOnly, identify, joined }) {
       const client = {
         id: randomUUID(),
         socket,
@@ -187,6 +190,7 @@ export function createLiveRooms() {
         room: null,
         readOnly,
         identify,
+        joined,
         privateUser: null,
         publicUser: null,
         name: "Guest",

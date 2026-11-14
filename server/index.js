@@ -182,6 +182,8 @@ app.get("/api/diagrams/:id/live", { websocket: true }, (socket, request) => {
   live.join(found?.row.id ?? id, socket, {
     readOnly: found?.readOnly ?? false,
     identify: ({ user, name }) => store.seeUser({ id: user, name, addressHash }).publicId,
+    // Visits are recorded for saved diagrams only; a new one has nothing to visit yet.
+    joined: found ? (user) => store.recordVisit(found.row.id, user, !found.readOnly) : undefined,
   });
 });
 

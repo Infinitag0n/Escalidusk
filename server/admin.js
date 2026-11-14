@@ -122,6 +122,15 @@ export function registerAdmin(app, { store, live, password }) {
         return result;
       });
 
+      admin.get("/diagrams/:id/visitors", async (request, reply) => {
+        const { id } = request.params;
+        if (!UUID_RE.test(id)) return reply.code(400).send({ error: "invalid diagram id" });
+        if (!store.findDiagram(id) || store.isViewId(id)) {
+          return reply.code(404).send({ error: "not found" });
+        }
+        return { visitors: store.visitorsOf(id) };
+      });
+
       admin.delete("/diagrams/:id", async (request, reply) => {
         const { id } = request.params;
         if (!UUID_RE.test(id)) return reply.code(400).send({ error: "invalid diagram id" });

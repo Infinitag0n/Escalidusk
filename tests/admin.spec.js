@@ -197,6 +197,69 @@ test.describe("backoffice data", () => {
     await expect.poll(async () => (await find(request, id))[0].openNow).toBe(0);
   });
 
+  test("records who opened a diagram, through which link, and how often", async ({
+    request,
+    baseURL,
+  }) => {
+    const { id, viewId } = await seedDiagram(request);
+    const editorName = `Editor ${randomUUID().slice(0, 8)}`;
+    const viewerName = `Viewer ${randomUUID().slice(0, 8)}`;
+    const editor = await connectLive(baseURL, id, { name: editorName });
+    const viewer = await connectLive(baseURL, viewId, { name: viewerName });
+    editor.socket.close();
+    viewer.socket.close();
+    // Coming straight back is the same visit, not a second one.
+    const again = await connectLive(baseURL, viewId, { name: viewerName, user: viewer.user });
+    again.socket.close();
+
+    await signIn(request);
+    expect((await find(request, id))[0].seenBy).toBe(2);
+    const response = await request.get(`/api/admin/diagrams/${id}/visitors`);
+    const { visitors } = await response.json();
+    expect(visitors).toHaveLength(2);
+    expect(visitors.find((visitor) => visitor.name === editorName)).toMatchObject({
+      publicId: editor.welcome.user,
+      canEdit: true,
+      visits: 1,
+    });
+    expect(visitors.find((visitor) => visitor.name === viewerName)).toMatchObject({
+      canEdit: false,
+      visits: 1,
+    });
+    // Private ids never leave the server.
+    const text = JSON.stringify(visitors);
+    expect(text).not.toContain(editor.user);
+    expect(text).not.toContain(viewer.user);
+
+    // Only an editing id names a diagram here.
+    expect((await request.get(`/api/admin/diagrams/${viewId}/visitors`)).status()).toBe(404);
+  });
+
+  test("a new visit is counted after half an hour away, and edit access is remembered", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "escalidusk-visits-"));
+    const store = openStore(dir);
+    const db = new DatabaseSync(path.join(dir, "escalidusk.db"));
+    const diagram = newId();
+    const user = newId();
+    store.saveDiagram(diagram, 0, JSON.stringify({ elements: [], appState: {} }), user);
+    store.seeUser({ id: user, name: "Ada" });
+
+    store.recordVisit(diagram, user, true);
+    store.recordVisit(diagram, user, false);
+    expect(store.visitorsOf(diagram)).toMatchObject([{ name: "Ada", visits: 1, canEdit: true }]);
+
+    db.prepare("UPDATE diagram_visits SET last_seen = last_seen - 31 * 60 * 1000").run();
+    store.recordVisit(diagram, user, false);
+    expect(store.visitorsOf(diagram)).toMatchObject([{ visits: 2, canEdit: true }]);
+    expect(store.listUsers({ search: "Ada" }).users[0].opened).toBe(1);
+
+    // Deleting the diagram forgets who opened it.
+    store.deleteDiagram(diagram);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM diagram_visits").get().n).toBe(0);
+    db.close();
+    store.close();
+  });
+
   test("lists people with their activity and how many others share their address", async ({
     request,
     baseURL,
@@ -396,6 +459,25 @@ test.describe("backoffice page", () => {
     await row.getByRole("button", { name: "Delete" }).click();
     await expect(page.getByText("No diagrams match.")).toBeVisible();
     expect((await request.get(`/api/diagrams/${id}`)).status()).toBe(410);
+  });
+
+  test("shows who opened a diagram", async ({ page, request }) => {
+    const name = `Seen diagram ${randomUUID().slice(0, 8)}`;
+    const visitor = `Lin ${randomUUID().slice(0, 8)}`;
+    const { viewId } = await seedDiagram(request, { appState: { name } });
+    await page.goto("/admin");
+    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    const live = await connectLive(new URL(page.url()).origin, viewId, { name: visitor });
+    live.socket.close();
+
+    await page.getByLabel("Search diagrams").fill(name);
+    const row = page.getByRole("row", { name: new RegExp(name) });
+    await row.getByRole("button", { name: "1 person" }).click();
+    const visitors = page.getByRole("table", { name: `Who opened ${name}` });
+    await expect(visitors.getByRole("row", { name: new RegExp(`${visitor}.*View`) })).toBeVisible();
+    await row.getByRole("button", { name: "1 person" }).click();
+    await expect(visitors).toHaveCount(0);
   });
 
   test("shows people, and signing out returns to the password prompt", async ({ page, request }) => {

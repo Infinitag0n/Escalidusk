@@ -46,7 +46,7 @@ Live collaboration uses a WebSocket at `/api/diagrams/<id>/live`. Behind a rever
 
 Setting `ADMIN_PASSWORD` switches on a backoffice at `<url>/admin`. After signing in with that password you can:
 
-- see every diagram, with who created and last changed it, its size, and how many people have it open, and open any of them;
+- see every diagram, with who created and last changed it, its size, how many people have it open, and who has ever opened it (with view or edit access, when, and how often), and open any of them;
 - delete a diagram. This is permanent. Its links then say it was deleted, and anyone who has it open is told and keeps their copy on screen, but can no longer save it;
 - see the people the server knows about (see below), with how many addresses each was seen from and how many other people share one;
 - remove images that no diagram uses any more.
@@ -60,6 +60,7 @@ There are no accounts. To give some continuity, and a way to deal with gross mis
 - **A user id per browser.** Each browser makes up a random id on first use and keeps it in its local storage. It is sent to the server only. Other people on a diagram see a different, public id.
 - **The current display name** for that id, so someone who renames themselves is still the same user.
 - **Who created and who last edited each diagram**, by user id.
+- **Who opened each diagram**: per diagram and user id, whether they came through the editing or the read-only link, when they first and last opened it, and how many visits (coming back within half an hour counts as the same visit). Deleted along with the diagram.
 - **Which network addresses a user id was seen from**, stored only as keyed hashes, never the address itself, and deleted after `ADDRESS_RETENTION_DAYS` without being seen. Addresses are also kept out of the server log.
 
 This identity is a soft one. Clearing browser storage creates a new user, and nothing stops two people from sharing an id on purpose, so it is never used to decide what someone may do. The address hashes are pseudonymous rather than anonymous: someone holding both the database and the hashing key could test a specific address against them. The backoffice shows names, activity and address counts; it never shows a private id or an address hash.

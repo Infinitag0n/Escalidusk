@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./admin.css";
 
@@ -147,8 +147,55 @@ function ListFooter({ list, noun }) {
   );
 }
 
+/** Everyone who has opened one diagram, shown under its row. */
+function Visitors({ diagram, onSignedOut }) {
+  const [visitors, setVisitors] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    call(`/diagrams/${diagram.id}/visitors`).then(
+      (result) => setVisitors(result.visitors),
+      (failure) => (failure instanceof SignedOut ? onSignedOut() : setError(failure.message)),
+    );
+  }, [diagram.id, onSignedOut]);
+
+  if (error) return <p className="error" role="alert">{error}</p>;
+  if (!visitors) return <p className="muted">Loading…</p>;
+  if (visitors.length === 0) return <p className="muted">Nobody has opened it yet.</p>;
+  return (
+    <table className="visitors" aria-label={`Who opened ${diagram.name || "Untitled"}`}>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Access</th>
+          <th>Last opened</th>
+          <th>First opened</th>
+          <th className="number">Visits</th>
+        </tr>
+      </thead>
+      <tbody>
+        {visitors.map((visitor) => (
+          <tr key={visitor.publicId}>
+            <td title={`Public id ${visitor.publicId}`}>{visitor.name}</td>
+            <td>{visitor.canEdit ? "Edit" : "View"}</td>
+            <td>
+              <When time={visitor.lastSeen} />
+            </td>
+            <td>
+              <When time={visitor.firstSeen} />
+            </td>
+            <td className="number">{visitor.visits}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function Diagrams({ onSignedOut, onChanged }) {
   const list = useList("/diagrams", "diagrams", onSignedOut);
+  // The diagram whose visitors are shown, if any.
+  const [expanded, setExpanded] = useState(null);
 
   const remove = async (diagram) => {
     const name = diagram.name || "Untitled";
@@ -186,12 +233,14 @@ function Diagrams({ onSignedOut, onChanged }) {
               <th className="number">Elements</th>
               <th className="number">Size</th>
               <th className="number">Open now</th>
+              <th className="number">Seen by</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {list.items.map((diagram) => (
-              <tr key={diagram.id}>
+              <Fragment key={diagram.id}>
+              <tr>
                 <td>
                   <a href={`/${diagram.id}`} target="_blank" rel="noreferrer">
                     {diagram.name || <span className="muted">Untitled</span>}
@@ -210,6 +259,17 @@ function Diagrams({ onSignedOut, onChanged }) {
                   {formatSize(diagram.sceneSize + diagram.imageSize)}
                 </td>
                 <td className="number">{diagram.openNow || <span className="muted">-</span>}</td>
+                <td className="number">
+                  <button
+                    type="button"
+                    className="link"
+                    aria-expanded={expanded === diagram.id}
+                    title="Show who opened it"
+                    onClick={() => setExpanded(expanded === diagram.id ? null : diagram.id)}
+                  >
+                    {diagram.seenBy} {diagram.seenBy === 1 ? "person" : "people"}
+                  </button>
+                </td>
                 <td className="actions">
                   <a href={`/${diagram.viewId}`} target="_blank" rel="noreferrer">
                     View
@@ -219,10 +279,18 @@ function Diagrams({ onSignedOut, onChanged }) {
                   </button>
                 </td>
               </tr>
+              {expanded === diagram.id && (
+                <tr className="details">
+                  <td colSpan={8}>
+                    <Visitors diagram={diagram} onSignedOut={onSignedOut} />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
             {!list.loading && list.items.length === 0 && (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={8} className="empty">
                   {list.search ? "No diagrams match." : "No diagrams yet."}
                 </td>
               </tr>
@@ -259,6 +327,7 @@ function People({ onSignedOut }) {
               <th>Last seen</th>
               <th>First seen</th>
               <th className="number">Created</th>
+              <th className="number">Opened</th>
               <th className="number">Last editor of</th>
               <th className="number">Addresses used</th>
               <th className="number">Others on the same address</th>
@@ -275,6 +344,7 @@ function People({ onSignedOut }) {
                   <When time={user.firstSeen} />
                 </td>
                 <td className="number">{user.created}</td>
+                <td className="number">{user.opened}</td>
                 <td className="number">{user.lastEditorOf}</td>
                 <td className="number">{user.addressCount}</td>
                 <td className="number">{user.sharesAddressWith}</td>
@@ -282,7 +352,7 @@ function People({ onSignedOut }) {
             ))}
             {!list.loading && list.items.length === 0 && (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={8} className="empty">
                   {list.search ? "Nobody matches." : "Nobody yet."}
                 </td>
               </tr>

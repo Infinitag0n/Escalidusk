@@ -6,6 +6,9 @@ import { DatabaseSync } from "node:sqlite";
 const DAY_MS = 24 * 60 * 60 * 1000;
 // How often one user's "last seen" is written at most; saves happen every second or so.
 const SEEN_WRITE_INTERVAL_MS = 5 * 60 * 1000;
+// Coming back to a diagram within this time counts as the same visit, so a
+// dropped connection or a reload does not inflate the count.
+const VISIT_GAP_MS = 30 * 60 * 1000;
 
 /**
  * SQLite-backed storage for diagrams, their image files, and the people who
@@ -80,6 +83,19 @@ export function openStore(dataDir) {
     ) WITHOUT ROWID;
     CREATE INDEX IF NOT EXISTS deleted_diagrams_view_id ON deleted_diagrams (view_id);
 
+    -- Who has opened which diagram: one row per diagram and person.
+    -- can_edit is 1 once they have opened it through its editing link.
+    CREATE TABLE IF NOT EXISTS diagram_visits (
+      diagram_id TEXT NOT NULL,
+      user_id    TEXT NOT NULL,
+      can_edit   INTEGER NOT NULL,
+      visits     INTEGER NOT NULL,
+      first_seen INTEGER NOT NULL,
+      last_seen  INTEGER NOT NULL,
+      PRIMARY KEY (diagram_id, user_id)
+    ) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS diagram_visits_by_user ON diagram_visits (user_id);
+
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -139,6 +155,23 @@ export function openStore(dataDir) {
      ON CONFLICT (user_id, address_hash) DO UPDATE SET last_seen = excluded.last_seen`,
   );
   const deleteOldAddresses = db.prepare("DELETE FROM user_addresses WHERE last_seen < ?");
+  const upsertVisit = db.prepare(
+    `INSERT INTO diagram_visits (diagram_id, user_id, can_edit, visits, first_seen, last_seen)
+     VALUES ($diagram, $user, $canEdit, 1, $now, $now)
+     ON CONFLICT (diagram_id, user_id) DO UPDATE SET
+       visits = visits + (CASE WHEN $now - last_seen >= $gap THEN 1 ELSE 0 END),
+       can_edit = max(can_edit, excluded.can_edit),
+       last_seen = excluded.last_seen`,
+  );
+  const selectVisitors = db.prepare(
+    `SELECT u.public_id AS publicId, u.display_name AS name, v.can_edit AS canEdit,
+            v.visits, v.first_seen AS firstSeen, v.last_seen AS lastSeen
+     FROM diagram_visits v JOIN users u ON u.id = v.user_id
+     WHERE v.diagram_id = ?
+     ORDER BY v.last_seen DESC, u.public_id
+     LIMIT 500`,
+  );
+  const deleteDiagramVisits = db.prepare("DELETE FROM diagram_visits WHERE diagram_id = ?");
   const selectSetting = db.prepare("SELECT value FROM settings WHERE key = ?");
   const insertSetting = db.prepare(
     "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING",
@@ -165,7 +198,8 @@ export function openStore(dataDir) {
             length(d.scene) AS sceneSize,
             (SELECT COUNT(*) FROM files f WHERE f.diagram_id = d.id) AS imageCount,
             (SELECT COALESCE(SUM(length(f.data)), 0) FROM files f WHERE f.diagram_id = d.id) AS imageSize,
-            creator.display_name AS createdBy, editor.display_name AS updatedBy
+            creator.display_name AS createdBy, editor.display_name AS updatedBy,
+            (SELECT COUNT(*) FROM diagram_visits v WHERE v.diagram_id = d.id) AS seenBy
      FROM diagrams d
      LEFT JOIN users creator ON creator.id = d.created_by
      LEFT JOIN users editor ON editor.id = d.updated_by
@@ -181,6 +215,7 @@ export function openStore(dataDir) {
             u.first_seen AS firstSeen, u.last_seen AS lastSeen,
             (SELECT COUNT(*) FROM diagrams d WHERE d.created_by = u.id) AS created,
             (SELECT COUNT(*) FROM diagrams d WHERE d.updated_by = u.id) AS lastEditorOf,
+            (SELECT COUNT(*) FROM diagram_visits v WHERE v.user_id = u.id) AS opened,
             (SELECT COUNT(*) FROM user_addresses a WHERE a.user_id = u.id) AS addressCount,
             (SELECT COUNT(DISTINCT other.user_id)
                FROM user_addresses mine
@@ -285,6 +320,7 @@ export function openStore(dataDir) {
       try {
         insertDeleted.run(id, row.viewId, Date.now());
         deleteDiagramFiles.run(id);
+        deleteDiagramVisits.run(id);
         deleteDiagramRow.run(id);
         db.exec("COMMIT");
       } catch (error) {
@@ -367,6 +403,31 @@ export function openStore(dataDir) {
         known.addresses.set(addressHash, now);
       }
       return { publicId: known.publicId };
+    },
+
+    /**
+     * Records that a user opened a diagram. Returning within half an hour
+     * continues the same visit rather than counting a new one.
+     * @param {string} diagramId the diagram's editing id
+     * @param {string} userId the user's private id
+     * @param {boolean} canEdit whether they came through the editing link
+     */
+    recordVisit(diagramId, userId, canEdit) {
+      upsertVisit.run({
+        $diagram: diagramId,
+        $user: userId,
+        $canEdit: canEdit ? 1 : 0,
+        $now: Date.now(),
+        $gap: VISIT_GAP_MS,
+      });
+    },
+
+    /**
+     * Everyone who has opened a diagram, most recent first. Private ids are left out.
+     * @returns {object[]}
+     */
+    visitorsOf(diagramId) {
+      return selectVisitors.all(diagramId).map((row) => ({ ...row, canEdit: row.canEdit === 1 }));
     },
 
     /** Forgets user-to-address links not seen for `days` days. Returns how many were removed. */
