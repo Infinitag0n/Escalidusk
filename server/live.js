@@ -32,15 +32,15 @@ function parse(raw) {
  * `identify` callback and never sent to anyone. Other people see the public
  * id that callback returns.
  *
- * After that the server only relays. Editors send element and settings
- * changes, their cursor position and their display name, and everyone else in
- * the room receives them. Nothing sent here is stored as diagram content;
- * diagrams are still saved through the HTTP API, and the room is told when a
- * save lands.
+ * After that the server only relays. Everyone sends their cursor position
+ * (which is also how the laser pointer travels) and their display name;
+ * editors also send element and settings changes. Everyone else in the room
+ * receives them. Nothing sent here is stored as diagram content; diagrams are
+ * still saved through the HTTP API, and the room is told when a save lands.
  *
- * People on a read-only link are in the same room but what they send is not
- * relayed, and they are never told the editing id (rooms are keyed by it, but
- * no message contains it).
+ * People on a read-only link are in the same room and are seen by the
+ * others, but any diagram change they send is dropped, and they are never
+ * told the editing id (rooms are keyed by it, but no message contains it).
  */
 export function createLiveRooms() {
   const rooms = new Map(); // room id -> Set of clients
@@ -70,17 +70,12 @@ export function createLiveRooms() {
   function relay(client, message) {
     const { roomId } = client;
     if (message.t === "name") {
-      // Recorded for viewers too, but only editors are shown to others.
       client.name = cleanName(message.name);
       client.identify({ user: client.privateUser, name: client.name });
-      if (!client.readOnly) {
-        broadcast(roomId, { t: "name", from: client.id, name: client.name }, client);
-      }
-      return;
-    }
-    if (client.readOnly) return;
-
-    if (message.t === "update") {
+      broadcast(roomId, { t: "name", from: client.id, name: client.name }, client);
+    } else if (message.t === "update") {
+      // The one thing a read-only connection may never do.
+      if (client.readOnly) return;
       const out = { t: "update", from: client.id };
       if (Array.isArray(message.elements) && message.elements.length > 0) {
         out.elements = message.elements;

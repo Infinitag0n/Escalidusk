@@ -97,12 +97,26 @@ body,
   cursor: not-allowed;
 }
 
+/* Pressed look for the laser switch, matching Excalidraw's selected tool. */
+.laser-button--active,
+.laser-button--active:hover:not(:disabled) {
+  color: var(--color-on-primary-container, #030064);
+  background: var(--color-surface-primary-container, #e0dfff);
+}
+
 .share-button--primary:disabled {
   opacity: 0.55;
 }
 
 .share-button:disabled > span {
   opacity: 0.45;
+}
+
+/* While we draw our own laser stroke we are briefly listed among the
+   collaborators (see LiveSession.laserStroke). Keep our own avatar out of
+   the top bar so it does not pop in and out with every stroke. */
+.excalidraw .UserList .is-current-user {
+  display: none;
 }
 
 /* Library button: icon only, to leave room in the top bar. */

@@ -8,7 +8,7 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 - Images are stored separately from the scene, so saves stay small.
 - Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. The **Share** button (top right) copies it once the diagram has been saved; **Share Edit** copies the editing link. On phones both are in the menu. The read-only link cannot be turned back into the editing link.
 - A link on an element that points to another diagram on the same server opens it in place.
-- Live collaboration: everyone with a diagram open sees each other's changes and cursors as they happen. People on the read-only link follow along live too, without being able to change anything.
+- Live collaboration: everyone with a diagram open sees each other's changes and cursors as they happen. People on the read-only link take part too: they follow along live, are seen by the others, and can point at things with the laser pointer (the **Laser** button, or K), without being able to change anything.
 - Others see you under the name in the bottom-right corner. It starts as a made-up "Guest" name; type over it to change it. It is remembered by your browser.
 - If the live connection drops, editing and saving carry on; changes are merged when saving or when the connection returns, never overwritten.
 
@@ -91,4 +91,14 @@ Running `docker compose watch` instead of `docker compose up` rebuilds and resta
 
 ## License
 
-[MIT](LICENSE). Excalidraw, which this project embeds, is also MIT licensed. The fonts bundled into the built app come from the Excalidraw package and keep their own licenses.
+[MIT](LICENSE). Excalidraw, which this project embeds, is also MIT licensed.
+
+This repository contains no fonts. The build copies the fonts that ship inside the `@excalidraw/excalidraw` package into the app, so a built container image does contain them, each under its own licence:
+
+| Font | Licence |
+| --- | --- |
+| Assistant, Cascadia Code, Excalifont, Lilita One, Nunito, Virgil, Xiaolai | SIL Open Font License 1.1 |
+| Comic Shanns | MIT |
+| Liberation Sans (version 1.05) | GPL v2 with font exception |
+
+All of them allow commercial use. If you pass a built image on to others, the font licences apply to that: keep the copyright and licence notices with the fonts, and note that Liberation Sans 1.05 is the older GPL-licensed release (version 2 and later are under the Open Font License).

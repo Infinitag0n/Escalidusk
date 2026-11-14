@@ -1,6 +1,8 @@
 import { sharedSettings } from "./sync.js";
 
 const POINTER_INTERVAL_MS = 50;
+const LASER_INTERVAL_MS = 16; // a laser stroke needs more points than a cursor does
+const LASER_FADE_MS = 1500; // how long a finished stroke is left to fade out
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 
@@ -11,7 +13,9 @@ const RECONNECT_MAX_MS = 15000;
  * they happen, applies theirs, and shows their cursors. It never stores
  * anything: saving stays with DiagramSync, which this class keeps informed.
  *
- * People on a read-only link receive everything but send nothing.
+ * People on a read-only link take part too: they are seen, with their
+ * cursor and laser pointer, and they follow every change. What they never do
+ * is send changes to the diagram.
  */
 export class LiveSession {
   #id;
@@ -32,6 +36,10 @@ export class LiveSession {
   #peers = new Map(); // client id -> { name, readOnly, pointer?, button?, selected? }
   #lastPointerAt = 0;
   #lastButton = "up";
+  #selfId = null; // our connection's id, as the others know it
+  #selfUser = null; // our public user id, as the others know it
+  #laserStroke = null; // { x, y, button } while we draw a laser stroke ourselves
+  #laserFadeTimer = null;
 
   /**
    * @param {object} options
@@ -43,7 +51,7 @@ export class LiveSession {
    * @param {string} options.userId this browser's private user id; told to the server only
    * @param {readonly object[]} options.elements the scene as loaded
    * @param {object} options.settings sharedSettings() of the scene as loaded
-   * @param {(count: number) => void} [options.onPeers] told how many other editors are present
+   * @param {(count: number) => void} [options.onPeers] told how many other people are present
    */
   constructor({ id, api, sync, readOnly, username, userId, elements, settings, onPeers }) {
     this.#id = id;
@@ -88,7 +96,10 @@ export class LiveSession {
 
   /** Call from Excalidraw's onPointerUpdate: shares our cursor with the others. */
   handlePointer({ pointer, button }) {
-    if (this.#disposed || this.#readOnly || !this.#ready || this.#peers.size === 0) return;
+    if (this.#disposed || !this.#ready || this.#peers.size === 0) return;
+    // While we draw a laser stroke ourselves, Excalidraw still reports the
+    // pointer as "up", which would cut the stroke short on other screens.
+    if (this.#laserStroke?.button === "down") return;
     const now = Date.now();
     if (button === this.#lastButton && now - this.#lastPointerAt < POINTER_INTERVAL_MS) return;
     this.#lastPointerAt = now;
@@ -103,6 +114,37 @@ export class LiveSession {
     });
   }
 
+  /**
+   * Draws one point of a laser stroke on our own behalf. Used on read-only
+   * pages, where Excalidraw turns every drag into panning and so never draws
+   * the laser itself. The stroke is shown to the others as usual, and to us
+   * by listing ourselves as a collaborator whose cursor is not drawn, which
+   * makes Excalidraw render our trail exactly like everyone else's.
+   * @param {"down" | "up"} button "down" for each point while drawing, "up" to finish
+   * @param {{x: number, y: number}} point in scene coordinates
+   */
+  laserStroke(button, { x, y }) {
+    if (this.#disposed) return;
+    const now = Date.now();
+    const sameButton = this.#laserStroke?.button === button;
+    if (sameButton && now - this.#lastPointerAt < LASER_INTERVAL_MS) return;
+    this.#lastPointerAt = now;
+    this.#lastButton = button;
+
+    clearTimeout(this.#laserFadeTimer);
+    this.#laserStroke = { x, y, button };
+    this.#publishPeers();
+    if (this.#ready && this.#peers.size > 0) {
+      this.#send({ t: "pointer", x, y, tool: "laser", button, selected: {} });
+    }
+    if (button === "up") {
+      this.#laserFadeTimer = setTimeout(() => {
+        this.#laserStroke = null;
+        this.#publishPeers();
+      }, LASER_FADE_MS);
+    }
+  }
+
   /** Changes the name other people see for us, from now on and after a reconnect. */
   setUsername(username) {
     this.#username = username;
@@ -112,6 +154,7 @@ export class LiveSession {
   dispose() {
     this.#disposed = true;
     clearTimeout(this.#retryTimer);
+    clearTimeout(this.#laserFadeTimer);
     this.#socket?.close();
   }
 
@@ -154,6 +197,8 @@ export class LiveSession {
     switch (message.t) {
       case "welcome": {
         this.#ready = true;
+        this.#selfId = message.id;
+        this.#selfUser = message.user;
         this.#retryDelay = RECONNECT_MIN_MS;
         this.#peers = new Map(message.peers.map((peer) => [peer.id, peer]));
         this.#publishPeers();
@@ -213,11 +258,10 @@ export class LiveSession {
     }
   }
 
-  /** Hands the other editors to Excalidraw, which draws their cursors and avatars. */
+  /** Hands the other people to Excalidraw, which draws their cursors and avatars. */
   #publishPeers() {
     const collaborators = new Map();
     for (const [id, peer] of this.#peers) {
-      if (peer.readOnly) continue; // viewers have no cursor to show
       collaborators.set(id, {
         // The same person in two tabs has one public user id and two connections.
         id: peer.user ?? id,
@@ -228,7 +272,19 @@ export class LiveSession {
         selectedElementIds: peer.selected,
       });
     }
+    if (this.#laserStroke) {
+      // Same ids as the others have for us, so our trail has the colour they see.
+      const self = this.#selfId ?? "self";
+      collaborators.set(self, {
+        id: this.#selfUser ?? self,
+        socketId: self,
+        isCurrentUser: true,
+        username: this.#username,
+        pointer: { x: this.#laserStroke.x, y: this.#laserStroke.y, tool: "laser", renderCursor: false },
+        button: this.#laserStroke.button,
+      });
+    }
     this.#api.updateScene({ collaborators });
-    this.#onPeers?.(collaborators.size);
+    this.#onPeers?.(this.#peers.size);
   }
 }

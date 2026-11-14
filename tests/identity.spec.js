@@ -236,7 +236,7 @@ test.describe("identity on the server", () => {
     for (const { socket } of [ada, adaAgain, bob, viewer]) socket.close();
   });
 
-  test("renames are recorded, for viewers too, but a viewer's is not announced", async ({
+  test("renames are recorded and announced, for viewers too", async ({
     request,
     baseURL,
   }) => {
@@ -255,7 +255,9 @@ test.describe("identity on the server", () => {
     await expect
       .poll(() => viewer.of("name"))
       .toEqual([{ t: "name", from: editor.welcome.id, name: "After" }]);
-    expect(editor.of("name")).toEqual([]);
+    await expect
+      .poll(() => editor.of("name"))
+      .toEqual([{ t: "name", from: viewer.welcome.id, name: "Still watching" }]);
     editor.socket.close();
     viewer.socket.close();
   });

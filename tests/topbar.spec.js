@@ -63,8 +63,8 @@ test.describe("share buttons", () => {
     const { viewId } = await seedDiagram(request, { elements: [rectangle()] });
     await openDiagram(page, viewId);
 
-    await expect(page.locator(".share-button")).toHaveCount(1);
-    await page.locator(".share-button").click();
+    await expect(page.getByRole("button", { name: "Share Edit" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Share", exact: true }).click();
     await expect.poll(() => clipboard(page)).toBe(`${baseURL}/${viewId}`);
   });
 

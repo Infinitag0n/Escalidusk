@@ -6,6 +6,7 @@ import {
   MainMenu,
   restoreElements,
   useDevice,
+  viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import { fetchDiagram, isDiagramId, newDiagramId } from "./api.js";
@@ -180,18 +181,21 @@ const TITLE_MIN_PX = 60;
  * measurement) and a ref callback for the element. The label on a read-only
  * page comes and goes with the name, so measuring follows the element itself.
  */
-function useTitleRoom() {
+function useTitleRoom(peerCount) {
   const [field, setField] = useState(null);
   const [room, setRoom] = useState(null);
   useLayoutEffect(() => {
     if (!field) return undefined;
     const measure = () => {
       const start = field.getBoundingClientRect().left;
-      // The right-hand group can stretch across the bar (it does on read-only
-      // pages), so look at the things inside it, not at the group itself.
+      // The right-hand group, and the avatar list's wrapper inside it, can
+      // stretch across the bar (they do on read-only pages), so look at the
+      // buttons and avatars themselves.
       const edges = [
         ...document.querySelectorAll(
-          ".excalidraw .App-toolbar, .excalidraw .layer-ui__wrapper__top-right > *",
+          ".excalidraw .App-toolbar, " +
+            ".excalidraw .layer-ui__wrapper__top-right > *:not(.UserList__wrapper), " +
+            ".excalidraw .layer-ui__wrapper__top-right .UserList > *",
         ),
       ]
         .map((element) => element.getBoundingClientRect())
@@ -214,7 +218,8 @@ function useTitleRoom() {
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [field]);
+    // Avatars come and go with the people present, without resizing anything observed.
+  }, [field, peerCount]);
   return [room, setField];
 }
 
@@ -223,9 +228,9 @@ function useTitleRoom() {
  * On a read-only page it is a label, not a text field. Hidden on the phone
  * layout, where the toolbar fills the top bar.
  */
-function TitleField({ value, readOnly, onEdit, onFocusChange }) {
+function TitleField({ value, readOnly, peerCount, onEdit, onFocusChange }) {
   const device = useDevice();
-  const [room, ref] = useTitleRoom();
+  const [room, ref] = useTitleRoom(peerCount);
   if (device.editor.isMobile) return null;
   const fit = room ? { visibility: "visible" } : { visibility: "hidden" };
   if (readOnly) {
@@ -260,6 +265,30 @@ function TitleField({ value, readOnly, onEdit, onFocusChange }) {
         if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
       }}
     />
+  );
+}
+
+/** Gives keyboard focus to Excalidraw, so its shortcuts (such as K for the laser) work. */
+function focusCanvas() {
+  document.querySelector(".excalidraw-container")?.focus();
+}
+
+/**
+ * Laser pointer switch for read-only pages. Editors have Excalidraw's own
+ * button in the toolbar; a read-only page has no toolbar, so without this the
+ * laser would only be reachable through its keyboard shortcut.
+ */
+function LaserButton({ active, onToggle }) {
+  return (
+    <button
+      type="button"
+      className={`top-pill share-button laser-button${active ? " laser-button--active" : ""}`}
+      aria-pressed={active}
+      title="Laser pointer: draw attention to something for everyone here (K)"
+      onClick={onToggle}
+    >
+      <span>Laser</span>
+    </button>
   );
 }
 
@@ -336,7 +365,9 @@ export default function Editor({ id }) {
   // Our display name as typed. Empty while being retyped; storage and the
   // other people only ever get a non-empty name.
   const [username, setUsername] = useState(localUsername);
-  // How many other people are editing this diagram right now.
+  // Whether the laser pointer is the active tool (it can also be switched with K).
+  const [laserActive, setLaserActive] = useState(false);
+  // How many other people have this diagram open right now.
   const [peerCount, setPeerCount] = useState(0);
   const liveRef = useRef(null);
   const syncRef = useRef(null);
@@ -418,6 +449,7 @@ export default function Editor({ id }) {
   const onChange = useCallback((elements, appState, files) => {
     syncRef.current?.handleChange(elements, appState, files);
     liveRef.current?.handleChange(elements, appState);
+    setLaserActive(appState.activeTool.type === "laser");
     // Pick up a name that arrived from elsewhere, but never while the user is
     // typing: an older echo of their own keystrokes would overwrite the field.
     if (!titleFocusedRef.current) setTitle(appState.name ?? "");
@@ -446,6 +478,43 @@ export default function Editor({ id }) {
     const go = () => window.location.assign(url.href);
     (syncRef.current?.flush() ?? Promise.resolve()).then(go, go);
   }, []);
+
+  // On a read-only page Excalidraw turns every drag into panning, laser or
+  // not. So while the laser is on, a drag that starts on the canvas is taken
+  // over here, before Excalidraw sees it, and drawn through the live session.
+  const onPointerDownCapture = (event) => {
+    if (!loaded?.readOnly || !laserActive || !api || !liveRef.current) return;
+    if (event.button !== 0 || !event.isPrimary || event.target.tagName !== "CANVAS") return;
+    event.stopPropagation();
+    event.preventDefault();
+    focusCanvas(); // Excalidraw would have done this itself on a click it handled
+
+    const live = liveRef.current;
+    const point = (e) => viewportCoordsToSceneCoords(e, api.getAppState());
+    const move = (e) => live.laserStroke("down", point(e));
+    const end = (e) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      live.laserStroke("up", point(e));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    live.laserStroke("down", point(event));
+  };
+
+  const toggleLaser = () => {
+    api?.setActiveTool({ type: laserActive ? "selection" : "laser" });
+    focusCanvas();
+  };
+  // Excalidraw ignores its tool shortcuts on a read-only page, so K is handled here.
+  const onKeyDown = (event) => {
+    if (!loaded?.readOnly || event.key.toLowerCase() !== "k") return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.target.closest("input, textarea, [contenteditable='true']")) return;
+    toggleLaser();
+  };
 
   const onTitleEdit = (name) => {
     setTitle(name);
@@ -492,7 +561,7 @@ export default function Editor({ id }) {
   const editLink = canEdit && viewId ? window.location.href : null;
 
   return (
-    <div className="editor">
+    <div className="editor" onPointerDownCapture={onPointerDownCapture} onKeyDown={onKeyDown}>
       <Excalidraw
         excalidrawAPI={setApi}
         initialData={loaded.initialData}
@@ -505,6 +574,12 @@ export default function Editor({ id }) {
         renderTopRightUI={(isMobile) =>
           isMobile ? null : (
             <>
+              {loaded.readOnly && (
+                <LaserButton
+                  active={laserActive}
+                  onToggle={toggleLaser}
+                />
+              )}
               <CopyLinkButton primary label="Share" link={readOnlyLink} title={SHARE_TITLE} />
               {canEdit && (
                 <CopyLinkButton label="Share Edit" link={editLink} title={SHARE_EDIT_TITLE} />
@@ -517,12 +592,11 @@ export default function Editor({ id }) {
         <TitleField
           value={title}
           readOnly={loaded.readOnly}
+          peerCount={peerCount}
           onEdit={onTitleEdit}
           onFocusChange={onTitleFocusChange}
         />
-        {!loaded.readOnly && (
-          <UserNameField value={username} onEdit={onUsernameEdit} onDone={onUsernameDone} />
-        )}
+        <UserNameField value={username} onEdit={onUsernameEdit} onDone={onUsernameDone} />
         <MainMenu>
           <MainMenu.Item onSelect={() => window.open("/", "_blank")}>New diagram</MainMenu.Item>
           <ShareMenuItems viewLink={readOnlyLink} editLink={editLink} canEdit={canEdit} />

@@ -64,10 +64,13 @@ test("typing a name does not trigger drawing shortcuts", async ({ page }) => {
   await expect(page.locator('[data-testid="toolbar-selection"]')).toBeChecked();
 });
 
-test("a read-only page has no name field", async ({ page, request }) => {
+test("a read-only page has the name field too", async ({ page, request }) => {
   const { viewId } = await seedDiagram(request, { elements: [rectangle()] });
   await openDiagram(page, viewId);
-  await expect(nameField(page)).toHaveCount(0);
+  await expect(nameField(page)).toHaveValue(/^Guest \d{3}$/);
+  await nameField(page).fill("Onlooker");
+  await nameField(page).press("Enter");
+  expect(await storedName(page)).toBe("Onlooker");
 });
 
 test("other editors see a new name straight away, and so does anyone joining later", async ({

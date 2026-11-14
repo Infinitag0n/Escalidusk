@@ -232,6 +232,111 @@ test.describe("on a narrower window", () => {
   });
 });
 
+test.describe("someone on a read-only link", () => {
+  /** Collects the pointer messages a page receives over its live connection. */
+  function watchPointers(page) {
+    const pointers = [];
+    page.on("websocket", (socket) =>
+      socket.on("framereceived", ({ payload }) => {
+        const message = JSON.parse(payload);
+        if (message.t === "pointer") pointers.push(message);
+      }),
+    );
+    return pointers;
+  }
+
+  test("shows their cursor to the editors", async ({ context, page, request }) => {
+    const { id, viewId } = await seedDiagram(request, { elements: [rectangle()] });
+    const pointers = watchPointers(page);
+    await openDiagram(page, id);
+    const viewer = await context.newPage();
+    await openDiagram(viewer, viewId);
+    await expect(page.locator(".UserList")).toBeVisible();
+
+    await viewer.mouse.move(400, 400);
+    await viewer.mouse.move(500, 450, { steps: 10 });
+    await expect.poll(() => pointers.length).toBeGreaterThan(0);
+    expect(pointers.at(-1)).toMatchObject({ tool: "pointer" });
+  });
+
+  test("can use the laser pointer, from a button or with K, and still cannot edit", async ({
+    context,
+    page,
+    request,
+  }) => {
+    const { id, viewId, version } = await seedDiagram(request, { elements: [rectangle()] });
+    const pointers = watchPointers(page);
+    await openDiagram(page, id);
+    const viewer = await context.newPage();
+    const saves = [];
+    viewer.on("request", (r) => r.method() === "PUT" && saves.push(r.url()));
+    await openDiagram(viewer, viewId);
+    await expect(page.locator(".UserList")).toBeVisible();
+
+    const laser = viewer.getByRole("button", { name: "Laser" });
+    await expect(laser).toHaveAttribute("aria-pressed", "false");
+    await laser.click();
+    await expect(laser).toHaveAttribute("aria-pressed", "true");
+
+    await viewer.mouse.move(400, 400);
+    await viewer.mouse.down();
+    await viewer.mouse.move(600, 500, { steps: 10 });
+    await viewer.mouse.up();
+    // The editor is sent the stroke: several points while drawing, then the release.
+    await expect
+      .poll(() => pointers.filter((p) => p.tool === "laser" && p.button === "down").length)
+      .toBeGreaterThan(3);
+    await expect.poll(() => pointers.at(-1)).toMatchObject({ tool: "laser", button: "up" });
+    // The drag drew a stroke; it did not pan the viewer's canvas.
+    expect(await inkIn(viewer, { x: 500, y: 320, width: 280, height: 160 })).toBeGreaterThan(0);
+
+    // K switches it off and on again, and the button follows.
+    await viewer.keyboard.press("k");
+    await expect(laser).toHaveAttribute("aria-pressed", "false");
+    await viewer.keyboard.press("k");
+    await expect(laser).toHaveAttribute("aria-pressed", "true");
+    await laser.click();
+    await expect(laser).toHaveAttribute("aria-pressed", "false");
+
+    await viewer.waitForTimeout(2500); // longer than the autosave delay
+    expect(saves).toEqual([]);
+    expect((await stored(request, id)).version).toBe(version);
+  });
+
+  test("keeps the diagram's name in view when other people join", async ({
+    context,
+    page,
+    request,
+  }) => {
+    const { id, viewId } = await seedDiagram(request, {
+      elements: [rectangle()],
+      appState: { name: "Roadmap" },
+    });
+    await openDiagram(page, viewId);
+    const label = page.locator(".diagram-title--readonly");
+    await expect(label).toBeVisible();
+
+    const editor = await context.newPage();
+    await openDiagram(editor, id);
+    await expect(page.locator(".UserList")).toBeVisible();
+    await expect(label).toBeVisible();
+    await expect(label).toHaveText("Roadmap");
+    // And it stops short of the avatars.
+    const avatars = await page.locator(".UserList").boundingBox();
+    const box = await label.boundingBox();
+    expect(box.x + box.width).toBeLessThanOrEqual(avatars.x);
+  });
+
+  test("an editor's page has no separate laser button; the toolbar has its own", async ({
+    page,
+    request,
+  }) => {
+    const { id } = await seedDiagram(request, { elements: [rectangle()] });
+    await openDiagram(page, id);
+    await expect(page.locator(".laser-button")).toHaveCount(0);
+  });
+});
+
 test("an editor's cursor position is shared with the others", async ({
   context,
   page,
@@ -277,7 +382,7 @@ test("an image dropped by one editor shows up for the other", async ({
     .toBeGreaterThan(1000);
 });
 
-test("other editors are shown while present and removed when they leave", async ({
+test("other people are shown while present and removed when they leave", async ({
   context,
   page,
   request,
@@ -286,17 +391,18 @@ test("other editors are shown while present and removed when they leave", async 
   await openDiagram(page, id);
   await expect(page.locator(".UserList")).toHaveCount(0);
 
-  // A viewer does not count as a collaborator with a cursor.
+  // Someone on the read-only link is present like anyone else.
   const viewer = await context.newPage();
   await openDiagram(viewer, viewId);
-  await page.waitForTimeout(500);
+  await expect(page.locator(".UserList")).toBeVisible();
+  await expect(viewer.locator(".UserList")).toBeVisible();
+
+  await viewer.close();
   await expect(page.locator(".UserList")).toHaveCount(0);
 
   const other = await context.newPage();
   await openDiagram(other, id);
   await expect(page.locator(".UserList")).toBeVisible();
-  await expect(viewer.locator(".UserList")).toBeVisible();
-
   await other.close();
   await expect(page.locator(".UserList")).toHaveCount(0);
 });
@@ -304,7 +410,7 @@ test("other editors are shown while present and removed when they leave", async 
 test.describe("live connection rules", () => {
   const connect = (baseURL, id, name) => connectLive(baseURL, id, { name });
 
-  test("editors hear each other; a read-only connection is listen-only", async ({
+  test("everyone hears each other, but a read-only connection cannot change the diagram", async ({
     request,
     baseURL,
   }) => {
@@ -318,9 +424,9 @@ test.describe("live connection rules", () => {
       ["Viewer", true],
     ]);
 
-    // What a viewer sends goes nowhere.
+    // A viewer's diagram change goes nowhere; their cursor and laser are shared.
     viewer.socket.send(JSON.stringify({ t: "update", elements: [{ id: "evil", version: 99 }] }));
-    viewer.socket.send(JSON.stringify({ t: "pointer", x: 1, y: 2 }));
+    viewer.socket.send(JSON.stringify({ t: "pointer", x: 1, y: 2, tool: "laser", button: "down" }));
     // What an editor sends reaches everyone else, viewers included.
     editor.socket.send(JSON.stringify({ t: "update", elements: [{ id: "good", version: 1 }] }));
 
@@ -328,7 +434,10 @@ test.describe("live connection rules", () => {
     await expect.poll(() => viewer.of("update").length).toBe(1);
     expect(second.of("update")[0].elements).toEqual([{ id: "good", version: 1 }]);
     expect(editor.of("update")).toEqual([]);
-    expect(second.of("pointer")).toEqual([]);
+    for (const connection of [editor, second]) {
+      await expect.poll(() => connection.of("pointer").length).toBe(1);
+      expect(connection.of("pointer")[0]).toMatchObject({ x: 1, y: 2, tool: "laser", button: "down" });
+    }
 
     // Nothing a viewer receives contains the editing id.
     expect(JSON.stringify(viewer.messages)).not.toContain(id);
