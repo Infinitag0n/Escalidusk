@@ -15,7 +15,10 @@ test("opening / starts a new diagram at a fresh UUID, stored only once edited", 
   page,
   request,
 }) => {
-  const id = await openDiagram(page);
+  // A browser that has never opened a diagram gets a new one straight away.
+  await page.goto("/");
+  await page.waitForSelector(".excalidraw canvas");
+  const id = new URL(page.url()).pathname.slice(1);
   expect(id).toMatch(UUID_RE);
   expect(await stored(request, id)).toBeNull();
 

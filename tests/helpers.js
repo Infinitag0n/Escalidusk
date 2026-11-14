@@ -7,7 +7,7 @@ export const newId = () => randomUUID();
 
 /** Opens a diagram (or a brand-new one when no id is given) and returns its id. */
 export async function openDiagram(page, id) {
-  await page.goto(id ? `/${id}` : "/");
+  await page.goto(id ? `/${id}` : "/new");
   await page.waitForSelector(".excalidraw canvas");
   return new URL(page.url()).pathname.slice(1);
 }

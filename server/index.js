@@ -146,6 +146,21 @@ app.put("/api/diagrams/:id", async (request, reply) => {
     .send(`{"error":"conflict","current":${current}}`);
 });
 
+// Names of several diagrams at once, for the labels of links between
+// diagrams. Whoever holds an id could open that diagram anyway.
+app.post("/api/diagrams/summaries", async (request, reply) => {
+  const ids = request.body?.ids;
+  if (!Array.isArray(ids) || ids.length > 200 || !ids.every((id) => UUID_RE.test(id))) {
+    return reply.code(400).send({ error: "expected { ids: [up to 200 diagram ids] }" });
+  }
+  const summaries = {};
+  for (const id of ids) {
+    const name = store.diagramName(id);
+    summaries[id] = name !== undefined ? { name } : store.isDeleted(id) ? { deleted: true } : null;
+  }
+  return summaries;
+});
+
 // Live collaboration: a WebSocket per person per open diagram. Opening it
 // with a read-only id joins the same room as the editors, but listen-only.
 app.get("/api/diagrams/:id/live", { websocket: true }, (socket, request) => {

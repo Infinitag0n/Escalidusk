@@ -62,6 +62,20 @@ export async function saveDiagram(id, baseVersion, scene, key, userId) {
   return { ok: true, version, viewId };
 }
 
+/**
+ * Looks up several diagrams' names at once, by editing or read-only id.
+ * @returns an object keyed by id: `{ name }`, `{ deleted: true }`, or null if unknown
+ */
+export async function fetchSummaries(ids) {
+  const response = await fetch("/api/diagrams/summaries", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!response.ok) throw await failure(response);
+  return response.json();
+}
+
 /** Uploads one Excalidraw file record (`{ id, mimeType, dataURL }`) as raw bytes. */
 export async function uploadFile(diagramId, file) {
   const blob = await (await fetch(file.dataURL)).blob();

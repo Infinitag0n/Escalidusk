@@ -9,8 +9,18 @@ import {
   viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
-import { DeletedError, fetchDiagram, isDiagramId, newDiagramId } from "./api.js";
+import { DiagramPicker } from "./DiagramList.jsx";
+import { DeletedError, fetchDiagram, fetchSummaries, isDiagramId, newDiagramId } from "./api.js";
+import { createDiagramLink, linkedDiagramIds, withCurrentNames } from "./diagramLinks.js";
 import { LiveSession } from "./live.js";
+import {
+  editIdFor,
+  forgetDiagram,
+  linkTargetOf,
+  recentDiagrams,
+  rememberDiagram,
+  updateDiagram,
+} from "./recent.js";
 import { DiagramSync, fetchSceneFiles, sceneKey, sharedSettings } from "./sync.js";
 
 // Per-browser preferences; these are not part of the shared diagram.
@@ -71,6 +81,7 @@ async function loadDiagram(id) {
   const settings = sharedSettings(diagram?.scene.appState);
   const files = await fetchSceneFiles(id, elements);
   return {
+    exists: diagram !== null,
     readOnly: diagram?.readOnly ?? false,
     viewId: diagram?.viewId ?? null,
     version: diagram?.version ?? 0,
@@ -304,9 +315,30 @@ function LaserButton({ active, onToggle }) {
  * just before the help button. Rendered through Excalidraw's footer, which
  * does not exist on the phone layout.
  */
-function UserNameField({ value, onEdit, onDone }) {
+function UserNameField({ value, onEdit, onDone, onLinkDiagram }) {
   return (
     <Footer>
+      {onLinkDiagram && (
+        <button
+          type="button"
+          className="top-pill share-button link-diagram-button"
+          title="Add a link to another diagram"
+          onClick={onLinkDiagram}
+        >
+          <span>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path
+                d="M7 4h10l5 8-5 8H7l-5-8z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Link diagram
+          </span>
+        </button>
+      )}
       {/* No type attribute, for the same reason as the diagram name. */}
       <input
         className="user-name"
@@ -391,7 +423,12 @@ export default function Editor({ id }) {
         setViewId(result.viewId);
         setTitle(result.savedSettings.name);
       },
-      (error) => !cancelled && setLoadError(error),
+      (error) => {
+        if (cancelled) return;
+        // A deleted diagram has no place among the ones to go back to.
+        if (error instanceof DeletedError) forgetDiagram(id);
+        setLoadError(error);
+      },
     );
     return () => {
       cancelled = true;
@@ -456,6 +493,46 @@ export default function Editor({ id }) {
     document.title = title.trim() ? `${title.trim()} - Escalidusk` : "Escalidusk";
   }, [title]);
 
+  // Keep this browser's list of recent diagrams up to date. A diagram joins
+  // the list once it exists on the server: when opened, or on its first save
+  // (which is when an editor learns its read-only id).
+  const exists = loaded ? loaded.readOnly || loaded.exists || viewId !== null : false;
+  useEffect(() => {
+    if (exists) rememberDiagram({ id, readOnly: loaded.readOnly, viewId });
+  }, [exists, id, loaded, viewId]);
+  useEffect(() => {
+    if (exists) updateDiagram(id, { name: title.trim() });
+  }, [exists, id, title]);
+  useEffect(() => {
+    if (deleted) forgetDiagram(id);
+  }, [deleted, id]);
+
+  // Labels of links to other diagrams follow those diagrams' names. Checked
+  // shortly after opening, and again whenever the window regains focus.
+  useEffect(() => {
+    if (!api || !loaded) return undefined;
+    let cancelled = false;
+    const refresh = async () => {
+      const ids = linkedDiagramIds(api.getSceneElementsIncludingDeleted());
+      if (ids.length === 0) return;
+      try {
+        const summaries = await fetchSummaries(ids);
+        if (cancelled) return;
+        const elements = withCurrentNames(api.getSceneElementsIncludingDeleted(), summaries);
+        if (elements) api.updateScene({ elements, captureUpdate: CaptureUpdateAction.NEVER });
+      } catch (error) {
+        console.warn("Could not refresh the names of linked diagrams", error);
+      }
+    };
+    const timer = setTimeout(refresh, 800);
+    window.addEventListener("focus", refresh);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [api, loaded]);
+
   const onChange = useCallback((elements, appState, files) => {
     syncRef.current?.handleChange(elements, appState, files);
     liveRef.current?.handleChange(elements, appState);
@@ -478,6 +555,10 @@ export default function Editor({ id }) {
       return;
     }
     if (url.origin !== window.location.origin || !isDiagramId(url.pathname.slice(1))) return;
+    // Links between diagrams carry read-only ids, so they never hand out edit
+    // access. Someone who can already edit the target still lands there.
+    const editId = editIdFor(url.pathname.slice(1));
+    if (editId) url.pathname = `/${editId}`;
 
     event.preventDefault();
     const { nativeEvent } = event.detail;
@@ -488,6 +569,37 @@ export default function Editor({ id }) {
     const go = () => window.location.assign(url.href);
     (syncRef.current?.flush() ?? Promise.resolve()).then(go, go);
   }, []);
+
+  // Which dialog is open: "open" (go to a recent diagram), "link" (add a link to one), or null.
+  const [picker, setPicker] = useState(null);
+
+  const openRecent = (entry) => {
+    setPicker(null);
+    const go = () => window.location.assign(`/${entry.id}`);
+    (syncRef.current?.flush() ?? Promise.resolve()).then(go, go);
+  };
+
+  // Adds a link to the chosen diagram in the middle of what is on screen, selected.
+  const addDiagramLink = (entry) => {
+    setPicker(null);
+    if (!api) return;
+    const appState = api.getAppState();
+    const centre = viewportCoordsToSceneCoords(
+      { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 },
+      appState,
+    );
+    const link = createDiagramLink({ viewId: linkTargetOf(entry), name: entry.name, centre });
+    api.updateScene({
+      elements: [...api.getSceneElementsIncludingDeleted(), ...link.elements],
+      appState: {
+        selectedElementIds: Object.fromEntries(link.elements.map((element) => [element.id, true])),
+        selectedGroupIds: { [link.groupId]: true },
+      },
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    // Once the dialog is gone, so the new hexagon can be moved or deleted from the keyboard.
+    setTimeout(focusCanvas);
+  };
 
   // On a read-only page Excalidraw turns every drag into panning, laser or
   // not. So while the laser is on, a drag that starts on the canvas is taken
@@ -581,6 +693,10 @@ export default function Editor({ id }) {
   // odd, so it also waits for the first save (which is when viewId arrives).
   const canEdit = !loaded.readOnly;
   const editLink = canEdit && viewId && !deleted ? window.location.href : null;
+  // Every recent diagram except this one (under either of its ids).
+  const others = picker
+    ? recentDiagrams().filter((entry) => entry.id !== id && linkTargetOf(entry) !== (loaded.readOnly ? id : viewId))
+    : [];
 
   return (
     <div className="editor" onPointerDownCapture={onPointerDownCapture} onKeyDown={onKeyDown}>
@@ -589,6 +705,25 @@ export default function Editor({ id }) {
           This diagram was deleted by an administrator. What you see is your copy; nothing is saved
           any more. Use the menu to export it if you need it.
         </div>
+      )}
+      {picker === "open" && (
+        <DiagramPicker
+          title="Open a recent diagram"
+          entries={others}
+          emptyText="No other diagrams have been opened in this browser yet."
+          onPick={openRecent}
+          onClose={() => setPicker(null)}
+        />
+      )}
+      {picker === "link" && (
+        <DiagramPicker
+          title="Link to a diagram"
+          hint="Adds a hexagon that opens the chosen diagram. People who follow it get the read-only page unless they can already edit that diagram."
+          entries={others.filter(linkTargetOf)}
+          emptyText="No other diagrams have been opened in this browser yet. Open or create the one you want to link to, then come back."
+          onPick={addDiagramLink}
+          onClose={() => setPicker(null)}
+        />
       )}
       <Excalidraw
         excalidrawAPI={setApi}
@@ -624,9 +759,18 @@ export default function Editor({ id }) {
           onEdit={onTitleEdit}
           onFocusChange={onTitleFocusChange}
         />
-        <UserNameField value={username} onEdit={onUsernameEdit} onDone={onUsernameDone} />
+        <UserNameField
+          value={username}
+          onEdit={onUsernameEdit}
+          onDone={onUsernameDone}
+          onLinkDiagram={canEdit && !deleted ? () => setPicker("link") : null}
+        />
         <MainMenu>
-          <MainMenu.Item onSelect={() => window.open("/", "_blank")}>New diagram</MainMenu.Item>
+          <MainMenu.Item onSelect={() => window.open("/new", "_blank")}>New diagram</MainMenu.Item>
+          <MainMenu.Item onSelect={() => setPicker("open")}>Open recent…</MainMenu.Item>
+          {canEdit && !deleted && (
+            <MainMenu.Item onSelect={() => setPicker("link")}>Link to a diagram…</MainMenu.Item>
+          )}
           <ShareMenuItems viewLink={readOnlyLink} editLink={editLink} canEdit={canEdit} />
           {!loaded.readOnly && <MainMenu.DefaultItems.LoadScene />}
           <MainMenu.DefaultItems.Export />

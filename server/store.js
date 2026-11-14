@@ -111,6 +111,10 @@ export function openStore(dataDir) {
      SET version = version + 1, scene = ?, updated_at = ?, updated_by = COALESCE(?, updated_by)
      WHERE id = ? AND version = ? RETURNING view_id AS viewId`,
   );
+  const selectName = db.prepare(
+    `SELECT COALESCE(json_extract(scene, '$.appState.name'), '') AS name
+     FROM diagrams WHERE id = ? OR view_id = ?`,
+  );
   const selectFile = db.prepare(
     "SELECT mime_type AS mimeType, data FROM files WHERE diagram_id = ? AND file_id = ?",
   );
@@ -255,6 +259,14 @@ export function openStore(dataDir) {
     /** Files are immutable: storing an existing id again is a no-op. */
     putFile(diagramId, fileId, mimeType, data) {
       insertFile.run(diagramId, fileId, mimeType, data, Date.now());
+    },
+
+    /**
+     * A diagram's name, by either of its ids ("" while it has none).
+     * @returns {string | undefined} undefined if there is no such diagram
+     */
+    diagramName(anyId) {
+      return selectName.get(anyId, anyId)?.name;
     },
 
     /** True if an administrator deleted the diagram with this editing or read-only id. */

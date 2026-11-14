@@ -223,3 +223,203 @@ body,
 .editor {
   position: relative;
 }
+
+/* --- Recent diagrams: the home page, and the picker dialog over the editor --- */
+
+.diagram-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diagram-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--list-line, #e3e3ea);
+}
+
+.diagram-list li:last-child {
+  border-bottom: 0;
+}
+
+.diagram-list__item {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.65rem 0.5rem;
+  border: 0;
+  border-radius: 0.4rem;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+}
+
+.diagram-list__item:hover,
+.diagram-list__item:focus-visible {
+  background: var(--list-hover, #f1f0ff);
+}
+
+.diagram-list__name {
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.diagram-list__name--untitled,
+.diagram-list__when,
+.diagram-list__empty {
+  color: var(--list-muted, #6a6a75);
+}
+
+.diagram-list__badge {
+  flex: none;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--list-line, #e3e3ea);
+  border-radius: 1rem;
+  font-size: 0.75rem;
+  color: var(--list-muted, #6a6a75);
+}
+
+.diagram-list__when {
+  flex: none;
+  margin-left: auto;
+  font-size: 0.8125rem;
+}
+
+.diagram-list__forget,
+.picker__close {
+  flex: none;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 0;
+  border-radius: 0.4rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--list-muted, #6a6a75);
+  background: none;
+  cursor: pointer;
+}
+
+.diagram-list__forget:hover,
+.picker__close:hover {
+  color: inherit;
+  background: var(--list-hover, #f1f0ff);
+}
+
+.home,
+.picker {
+  --list-line: #e3e3ea;
+  --list-hover: #f1f0ff;
+  --list-muted: #6a6a75;
+  font-family: system-ui, sans-serif;
+  color: #1b1b1f;
+  background: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  .home,
+  .picker {
+    --list-line: #33333b;
+    --list-hover: #2c2b45;
+    --list-muted: #9b9ba8;
+    color: #e8e8ee;
+    background: #1e1e22;
+  }
+}
+
+.home {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 2.5rem max(1rem, calc(50% - 22rem));
+}
+
+.home header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.home h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.home h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--list-muted);
+}
+
+.home__new {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: #fff;
+  background: #6965db;
+}
+
+.home__new:hover {
+  background: #5b57d1;
+}
+
+.picker-backdrop {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 1rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 30rem);
+  max-height: 70vh;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.picker header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.picker h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.picker__hint {
+  margin: 0.4rem 0 0.6rem;
+  font-size: 0.875rem;
+  color: var(--list-muted);
+}
+
+.picker .diagram-list {
+  overflow-y: auto;
+}
+
+/* "Link diagram" sits at the left end of the footer's free space. */
+.excalidraw .link-diagram-button {
+  margin-left: 0.5rem;
+}
+
+.link-diagram-button > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}

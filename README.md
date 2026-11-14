@@ -2,12 +2,13 @@
 
 Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-side storage and permanent links. Every diagram lives at `<url>/<diagram-uuid>`.
 
-- Opening `/` starts a new diagram and puts its UUID in the address bar.
+- Opening `/` starts a new diagram and puts its UUID in the address bar. Once your browser has opened some diagrams, `/` lists them so you can go back to one, with a button for a new one (`/new` always starts a new one). The menu has the same list under **Open recent…**. The list is kept in your browser; the server offers no list of diagrams to anyone.
 - Changes autosave about a second after you stop drawing.
 - Give a diagram a name by typing next to the menu button. It becomes the browser tab title and the default file name for exports.
 - Images are stored separately from the scene, so saves stay small.
 - Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. The **Share** button (top right) copies it once the diagram has been saved; **Share Edit** copies the editing link. On phones both are in the menu. The read-only link cannot be turned back into the editing link.
-- A link on an element that points to another diagram on the same server opens it in place.
+- Link diagrams to each other: **Link diagram** (bottom left, or in the menu) adds a hexagon that opens a diagram you pick from your recent ones. It shows that diagram's name and follows it when the diagram is renamed. The hexagon carries the target's read-only link, so sharing a diagram never hands out edit access to the diagrams it links to; if your browser has already opened the target for editing, following the hexagon takes you to the editable page.
+- Any other link on an element that points to a diagram on the same server also opens in place.
 - Live collaboration: everyone with a diagram open sees each other's changes and cursors as they happen. People on the read-only link take part too: they follow along live, are seen by the others, and can point at things with the laser pointer (the **Laser** button, or K), without being able to change anything.
 - Others see you under the name in the bottom-right corner. It starts as a made-up "Guest" name; type over it to change it. It is remembered by your browser.
 - If the live connection drops, editing and saving carry on; changes are merged when saving or when the connection returns, never overwritten.
@@ -86,7 +87,7 @@ Running `docker compose watch` instead of `docker compose up` rebuilds and resta
 ## Layout
 
 - `server/` — Fastify server: diagram and image API, serves the built frontend. `store.js` is the SQLite layer, `live.js` the collaboration rooms, `address.js` the address hashing, `admin.js` the backoffice API.
-- `src/` — React app around the `@excalidraw/excalidraw` editor. `sync.js` holds autosave, image upload and merging; `live.js` the collaboration connection. `src/admin/` is the backoffice page, built separately so it does not load the editor.
+- `src/` — React app around the `@excalidraw/excalidraw` editor. `sync.js` holds autosave, image upload and merging; `live.js` the collaboration connection; `recent.js` the browser's list of opened diagrams; `diagramLinks.js` the hexagon links. `src/admin/` is the backoffice page, built separately so it does not load the editor.
 - `tests/` — Playwright tests for the API and the editor.
 - `scripts/copy-assets.mjs` — copies Excalidraw's fonts into `public/` so nothing is fetched from a CDN.
 
@@ -98,6 +99,7 @@ Running `docker compose watch` instead of `docker compose up` rebuilds and resta
 | `PUT /api/diagrams/:id`                   | Body `{ baseVersion, elements, appState }`. 409 with the stored copy if `baseVersion` is out of date; use `0` to create. 403 through a read-only id |
 | `GET /api/diagrams/:id/files/:fileId`     | Image bytes                                                               |
 | `PUT /api/diagrams/:id/files/:fileId`     | Raw image body with its `Content-Type`. 403 through a read-only id        |
+| `POST /api/diagrams/summaries`             | Body `{ ids }` (editing or read-only ids). Returns each one's `{ name }`, `{ deleted: true }`, or `null` |
 | `GET /api/diagrams/:id/live` (WebSocket)  | Collaboration room for the diagram; listen-only through a read-only id    |
 | `GET /api/health`                         | `{ ok: true }`                                                            |
 
