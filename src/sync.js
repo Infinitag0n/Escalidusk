@@ -82,6 +82,7 @@ export class DiagramSync {
   #lastKey = null; // sceneKey seen by the previous handleChange that scheduled a save
   #onStatus;
   #onViewId;
+  #userId;
   #readOnly;
   #status = "saved";
   #syncedFiles;
@@ -107,6 +108,7 @@ export class DiagramSync {
    * @param {(status: "saved" | "unsaved" | "saving" | "error") => void} options.onStatus
    * @param {boolean} [options.readOnly] opened through a read-only link
    * @param {(viewId: string) => void} [options.onViewId] told the read-only id after each save
+   * @param {string} [options.userId] this browser's private user id, sent with saves
    */
   constructor({
     id,
@@ -118,6 +120,7 @@ export class DiagramSync {
     onStatus,
     readOnly = false,
     onViewId,
+    userId,
   }) {
     this.#id = id;
     this.#api = api;
@@ -128,6 +131,7 @@ export class DiagramSync {
     this.#onStatus = onStatus;
     this.#readOnly = readOnly;
     this.#onViewId = onViewId;
+    this.#userId = userId;
   }
 
   /** Call from Excalidraw's onChange. Cheap when nothing relevant changed. */
@@ -327,6 +331,7 @@ export class DiagramSync {
         appState: settings,
       },
       key,
+      this.#userId,
     );
 
     if (result.ok) {

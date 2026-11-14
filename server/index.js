@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
+import { createAddressHasher } from "./address.js";
 import { createLiveRooms } from "./live.js";
 import { openStore } from "./store.js";
 
@@ -11,6 +12,12 @@ const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const DATA_DIR = path.resolve(process.env.DATA_DIR ?? "data");
 const DIST_DIR = fileURLToPath(new URL("../dist", import.meta.url));
+// Set when a reverse proxy sits in front, so the client's address is taken
+// from the X-Forwarded-For header instead of being the proxy's own.
+const TRUST_PROXY = process.env.TRUST_PROXY === "true";
+// How long to remember which (hashed) addresses a user was seen from.
+const ADDRESS_RETENTION_DAYS = Number(process.env.ADDRESS_RETENTION_DAYS ?? 90);
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const MAX_SCENE_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
@@ -32,7 +39,22 @@ const IMAGE_TYPES = new Set([
 
 const store = openStore(DATA_DIR);
 const live = createLiveRooms();
-const app = Fastify({ logger: true, bodyLimit: MAX_SCENE_BYTES });
+const hashAddress = createAddressHasher(process.env.ADDRESS_SECRET || store.addressSecret());
+
+store.pruneAddresses(ADDRESS_RETENTION_DAYS);
+setInterval(() => store.pruneAddresses(ADDRESS_RETENTION_DAYS), DAY_MS).unref();
+
+const app = Fastify({
+  bodyLimit: MAX_SCENE_BYTES,
+  trustProxy: TRUST_PROXY,
+  logger: {
+    serializers: {
+      // Addresses are only ever kept hashed, so keep them out of the log too.
+      // The query string is dropped as a precaution against ids ending up there.
+      req: (request) => ({ method: request.method, url: request.url.split("?")[0] }),
+    },
+  },
+});
 await app.register(fastifyWebsocket, { options: { maxPayload: MAX_LIVE_MESSAGE_BYTES } });
 
 // Image uploads arrive as raw bytes.
@@ -53,6 +75,12 @@ function diagramJson(row, readOnly) {
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The private user id a browser sent with a request, if it sent a valid one. */
+function userIdOf(request) {
+  const value = request.headers["x-user-id"];
+  return typeof value === "string" && UUID_RE.test(value) ? value : null;
 }
 
 app.get("/api/health", async () => ({ ok: true }));
@@ -88,7 +116,9 @@ app.put("/api/diagrams/:id", async (request, reply) => {
   const key = typeof body.key === "string" && body.key.length <= 512 ? body.key : null;
 
   const sceneJson = JSON.stringify({ elements: body.elements, appState: body.appState ?? {} });
-  const result = store.saveDiagram(id, body.baseVersion, sceneJson);
+  const userId = userIdOf(request);
+  if (userId) store.seeUser({ id: userId, addressHash: hashAddress(request.ip) });
+  const result = store.saveDiagram(id, body.baseVersion, sceneJson, userId);
   if (result.ok) {
     // Let everyone else who has this diagram open know it was saved.
     if (key) live.notifySaved(id, result.version, key, result.viewId);
@@ -114,9 +144,10 @@ app.get("/api/diagrams/:id/live", { websocket: true }, (socket, request) => {
   }
   const found = store.findDiagram(id);
   // An unknown id is a diagram that has not been saved yet; its room is the id itself.
+  const addressHash = hashAddress(request.ip);
   live.join(found?.row.id ?? id, socket, {
-    name: request.query.name,
     readOnly: found?.readOnly ?? false,
+    identify: ({ user, name }) => store.seeUser({ id: user, name, addressHash }).publicId,
   });
 });
 

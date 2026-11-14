@@ -8,7 +8,7 @@ import {
   useDevice,
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
-import { fetchDiagram, isDiagramId } from "./api.js";
+import { fetchDiagram, isDiagramId, newDiagramId } from "./api.js";
 import { LiveSession } from "./live.js";
 import { DiagramSync, fetchSceneFiles, sceneKey, sharedSettings } from "./sync.js";
 
@@ -17,7 +17,22 @@ const THEME_KEY = "escalidusk:theme";
 const LIBRARY_KEY = "escalidusk:library";
 const USERNAME_KEY = "escalidusk:username";
 
+const USER_ID_KEY = "escalidusk:user-id";
 const USERNAME_MAX_LENGTH = 40;
+
+/**
+ * This browser's private user id, made up on first use. It is a soft
+ * identity ("probably the same browser as before"), not a login. Only the
+ * server is ever told; other people see a different, public id.
+ */
+function localUserId() {
+  let userId = readLocal(USER_ID_KEY, null);
+  if (!isDiagramId(userId)) {
+    userId = newDiagramId();
+    writeLocal(USER_ID_KEY, userId);
+  }
+  return userId;
+}
 
 /**
  * The name other people see next to our cursor. Made up once per browser,
@@ -355,6 +370,7 @@ export default function Editor({ id }) {
       onStatus: setStatus,
       readOnly: loaded.readOnly,
       onViewId: setViewId,
+      userId: localUserId(),
     });
     syncRef.current = sync;
     const live = new LiveSession({
@@ -363,6 +379,7 @@ export default function Editor({ id }) {
       sync,
       readOnly: loaded.readOnly,
       username: localUsername(),
+      userId: localUserId(),
       elements: loaded.initialData.elements,
       settings: loaded.savedSettings,
       onPeers: setPeerCount,

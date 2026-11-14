@@ -141,3 +141,37 @@ export const visibleText = (locator) =>
 
 /** Tells the app its tab regained focus, which makes it check the server for changes. */
 export const refocus = (page) => page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+/**
+ * Opens a raw live-collaboration connection, introduces itself, and collects
+ * the messages it receives. `user` is the private user id to introduce as.
+ */
+export async function connectLive(baseURL, id, { name = "Test", user = randomUUID() } = {}) {
+  const socket = new WebSocket(`${baseURL.replace("http", "ws")}/api/diagrams/${id}/live`);
+  const messages = [];
+  socket.addEventListener("message", (event) => messages.push(JSON.parse(event.data)));
+  await new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve);
+    socket.addEventListener("error", reject);
+  });
+  socket.send(JSON.stringify({ t: "hello", user, name }));
+  await expect.poll(() => messages.some((message) => message.t === "welcome")).toBe(true);
+  return {
+    socket,
+    user,
+    messages,
+    welcome: messages.find((message) => message.t === "welcome"),
+    of: (type) => messages.filter((message) => message.t === type),
+    send: (message) => socket.send(JSON.stringify(message)),
+  };
+}
+
+/** Opens a raw connection, sends `first` (if any) and resolves with the code it gets closed with. */
+export function liveCloseCode(baseURL, id, first) {
+  const socket = new WebSocket(`${baseURL.replace("http", "ws")}/api/diagrams/${id}/live`);
+  return new Promise((resolve) => {
+    socket.addEventListener("open", () => first !== undefined && socket.send(first));
+    socket.addEventListener("close", (event) => resolve(event.code));
+    socket.addEventListener("error", () => {});
+  });
+}

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openDiagram, rectangle, seedDiagram } from "./helpers.js";
+import { connectLive, openDiagram, rectangle, seedDiagram } from "./helpers.js";
 
 const nameField = (page) => page.getByLabel("Your name");
 const storedName = (page) =>
@@ -95,15 +95,9 @@ test("other editors see a new name straight away, and so does anyone joining lat
   await expect.poll(() => renames.at(-1)).toBe("Zoe");
 
   // Someone connecting afterwards is told the current name, not the original.
-  const socket = new WebSocket(`${baseURL.replace("http", "ws")}/api/diagrams/${id}/live?name=Late`);
-  const welcome = await new Promise((resolve) => {
-    socket.addEventListener("message", (event) => {
-      const message = JSON.parse(event.data);
-      if (message.t === "welcome") resolve(message);
-    });
-  });
-  socket.close();
-  expect(welcome.peers.map((peer) => peer.name)).toContain("Zoe");
+  const late = await connectLive(baseURL, id, { name: "Late" });
+  late.socket.close();
+  expect(late.welcome.peers.map((peer) => peer.name)).toContain("Zoe");
 
   await first.context().close();
   await second.context().close();

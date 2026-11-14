@@ -30,7 +30,22 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `HOST`     | `0.0.0.0` | Address the server binds to     |
 | `DATA_DIR` | `/data`   | Folder holding the database     |
 
+| `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so the visitor's address is read from `X-Forwarded-For` |
+| `ADDRESS_RETENTION_DAYS` | `90` | How long user-to-address links are kept |
+| `ADDRESS_SECRET` | generated | Key for hashing addresses. By default one is made up and stored in the database |
+
 Live collaboration uses a WebSocket at `/api/diagrams/<id>/live`. Behind a reverse proxy, make sure WebSocket upgrades are passed through, or people will only see each other's changes after a save.
+
+## What is recorded about people
+
+There are no accounts. To give some continuity, and a way to deal with gross misuse, the server keeps:
+
+- **A user id per browser.** Each browser makes up a random id on first use and keeps it in its local storage. It is sent to the server only. Other people on a diagram see a different, public id.
+- **The current display name** for that id, so someone who renames themselves is still the same user.
+- **Who created and who last edited each diagram**, by user id.
+- **Which network addresses a user id was seen from**, stored only as keyed hashes, never the address itself, and deleted after `ADDRESS_RETENTION_DAYS` without being seen. Addresses are also kept out of the server log.
+
+This identity is a soft one. Clearing browser storage creates a new user, and nothing stops two people from sharing an id on purpose, so it is never used to decide what someone may do. The address hashes are pseudonymous rather than anonymous: someone holding both the database and the hashing key could test a specific address against them. Nothing in the app displays any of this yet; it is in the database for an administrator to query.
 
 ## Develop
 
@@ -58,7 +73,7 @@ Running `docker compose watch` instead of `docker compose up` rebuilds and resta
 
 ## Layout
 
-- `server/` — Fastify server: diagram and image API, serves the built frontend. `store.js` is the SQLite layer, `live.js` the collaboration rooms.
+- `server/` — Fastify server: diagram and image API, serves the built frontend. `store.js` is the SQLite layer, `live.js` the collaboration rooms, `address.js` the address hashing.
 - `src/` — React app around the `@excalidraw/excalidraw` editor. `sync.js` holds autosave, image upload and merging; `live.js` the collaboration connection.
 - `tests/` — Playwright tests for the API and the editor.
 - `scripts/copy-assets.mjs` — copies Excalidraw's fonts into `public/` so nothing is fetched from a CDN.

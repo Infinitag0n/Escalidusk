@@ -19,6 +19,7 @@ export class LiveSession {
   #sync;
   #readOnly;
   #username;
+  #userId;
   #onPeers;
   #socket = null;
   #ready = false; // connected and welcomed by the server
@@ -39,16 +40,18 @@ export class LiveSession {
    * @param {import("./sync.js").DiagramSync} options.sync
    * @param {boolean} options.readOnly
    * @param {string} options.username shown next to our cursor on other people's screens
+   * @param {string} options.userId this browser's private user id; told to the server only
    * @param {readonly object[]} options.elements the scene as loaded
    * @param {object} options.settings sharedSettings() of the scene as loaded
    * @param {(count: number) => void} [options.onPeers] told how many other editors are present
    */
-  constructor({ id, api, sync, readOnly, username, elements, settings, onPeers }) {
+  constructor({ id, api, sync, readOnly, username, userId, elements, settings, onPeers }) {
     this.#id = id;
     this.#api = api;
     this.#sync = sync;
     this.#readOnly = readOnly;
     this.#username = username;
+    this.#userId = userId;
     this.#onPeers = onPeers;
     // What we loaded is what the server has; none of it needs sending.
     for (const element of elements) this.#sent.set(element.id, element.version);
@@ -103,7 +106,7 @@ export class LiveSession {
   /** Changes the name other people see for us, from now on and after a reconnect. */
   setUsername(username) {
     this.#username = username;
-    if (!this.#disposed && !this.#readOnly && this.#ready) this.#send({ t: "name", name: username });
+    if (!this.#disposed && this.#ready) this.#send({ t: "name", name: username });
   }
 
   dispose() {
@@ -115,10 +118,13 @@ export class LiveSession {
   #connect() {
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     const socket = new WebSocket(
-      `${scheme}://${window.location.host}/api/diagrams/${this.#id}/live` +
-        `?name=${encodeURIComponent(this.#username)}`,
+      `${scheme}://${window.location.host}/api/diagrams/${this.#id}/live`,
     );
     this.#socket = socket;
+    // Introduce ourselves in a message, not in the address: addresses end up in logs.
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ t: "hello", user: this.#userId, name: this.#username }));
+    };
     socket.onmessage = (event) => {
       if (this.#socket !== socket || this.#disposed) return;
       let message;
@@ -213,7 +219,8 @@ export class LiveSession {
     for (const [id, peer] of this.#peers) {
       if (peer.readOnly) continue; // viewers have no cursor to show
       collaborators.set(id, {
-        id,
+        // The same person in two tabs has one public user id and two connections.
+        id: peer.user ?? id,
         socketId: id,
         username: peer.name,
         pointer: peer.pointer,

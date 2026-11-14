@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 const HEARTBEAT_MS = 30_000;
+const HELLO_TIMEOUT_MS = 10_000;
 const OPEN = 1; // WebSocket.readyState of an open socket
+const POLICY_VIOLATION = 1008; // WebSocket close code
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** A display name as shown to other people: trimmed, bounded, never empty. */
 export function cleanName(raw) {
@@ -12,21 +15,36 @@ function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function parse(raw) {
+  try {
+    const message = JSON.parse(raw.toString());
+    return isPlainObject(message) ? message : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Live collaboration rooms: one per diagram, holding everyone who has it open.
  *
- * The server only relays. Editors send element and settings changes, their
- * cursor position and their display name, and everyone else in the room
- * receives them. Nothing sent
- * here is stored; diagrams are still saved through the HTTP API, and the room
- * is told when a save lands.
+ * A connection first says who it is ({ t: "hello", user, name }) and only
+ * then joins the room. `user` is the person's private id; it is handed to the
+ * `identify` callback and never sent to anyone. Other people see the public
+ * id that callback returns.
  *
- * People on a read-only link are in the same room but anything they send is
- * dropped, and they are never told the editing id (rooms are keyed by it, but
+ * After that the server only relays. Editors send element and settings
+ * changes, their cursor position and their display name, and everyone else in
+ * the room receives them. Nothing sent here is stored as diagram content;
+ * diagrams are still saved through the HTTP API, and the room is told when a
+ * save lands.
+ *
+ * People on a read-only link are in the same room but what they send is not
+ * relayed, and they are never told the editing id (rooms are keyed by it, but
  * no message contains it).
  */
 export function createLiveRooms() {
   const rooms = new Map(); // room id -> Set of clients
+  const pending = new Set(); // connected, but not yet introduced
 
   function send(client, text) {
     if (client.socket.readyState === OPEN) client.socket.send(text);
@@ -41,17 +59,26 @@ export function createLiveRooms() {
     }
   }
 
-  const describe = (client) => ({ id: client.id, name: client.name, readOnly: client.readOnly });
+  // What other people are told about someone. Never includes the private id.
+  const describe = (client) => ({
+    id: client.id,
+    user: client.publicUser,
+    name: client.name,
+    readOnly: client.readOnly,
+  });
 
-  function relay(roomId, client, raw) {
-    if (client.readOnly) return;
-    let message;
-    try {
-      message = JSON.parse(raw.toString());
-    } catch {
+  function relay(client, message) {
+    const { roomId } = client;
+    if (message.t === "name") {
+      // Recorded for viewers too, but only editors are shown to others.
+      client.name = cleanName(message.name);
+      client.identify({ user: client.privateUser, name: client.name });
+      if (!client.readOnly) {
+        broadcast(roomId, { t: "name", from: client.id, name: client.name }, client);
+      }
       return;
     }
-    if (!isPlainObject(message)) return;
+    if (client.readOnly) return;
 
     if (message.t === "update") {
       const out = { t: "update", from: client.id };
@@ -68,9 +95,6 @@ export function createLiveRooms() {
         };
       }
       if (out.elements || out.settings) broadcast(roomId, out, client);
-    } else if (message.t === "name") {
-      client.name = cleanName(message.name);
-      broadcast(roomId, { t: "name", from: client.id, name: client.name }, client);
     } else if (message.t === "pointer") {
       if (!Number.isFinite(message.x) || !Number.isFinite(message.y)) return;
       broadcast(
@@ -89,10 +113,42 @@ export function createLiveRooms() {
     }
   }
 
+  /** Handles the first message, which must be the introduction. */
+  function introduce(client, message) {
+    if (message?.t !== "hello" || typeof message.user !== "string" || !UUID_RE.test(message.user)) {
+      client.socket.close(POLICY_VIOLATION, "expected hello");
+      return;
+    }
+    clearTimeout(client.helloTimer);
+    pending.delete(client);
+    client.privateUser = message.user;
+    client.name = cleanName(message.name);
+    client.publicUser = client.identify({ user: client.privateUser, name: client.name });
+
+    const { roomId } = client;
+    let room = rooms.get(roomId);
+    if (!room) {
+      room = new Set();
+      rooms.set(roomId, room);
+    }
+    send(
+      client,
+      JSON.stringify({
+        t: "welcome",
+        id: client.id,
+        user: client.publicUser,
+        peers: [...room].map(describe),
+      }),
+    );
+    broadcast(roomId, { t: "join", peer: describe(client) });
+    room.add(client);
+    client.room = room;
+  }
+
   // Drop connections that silently went away (closed laptop, lost network).
   const heartbeat = setInterval(() => {
-    for (const room of rooms.values()) {
-      for (const client of room) {
+    for (const clients of [pending, ...rooms.values()]) {
+      for (const client of clients) {
         if (!client.alive) {
           client.socket.terminate();
           continue;
@@ -105,24 +161,49 @@ export function createLiveRooms() {
   heartbeat.unref();
 
   return {
-    /** Adds a freshly connected socket to a diagram's room. */
-    join(roomId, socket, { name, readOnly }) {
-      const client = { id: randomUUID(), socket, name: cleanName(name), readOnly, alive: true };
-      let room = rooms.get(roomId);
-      if (!room) {
-        room = new Set();
-        rooms.set(roomId, room);
-      }
-      send(client, JSON.stringify({ t: "welcome", id: client.id, peers: [...room].map(describe) }));
-      broadcast(roomId, { t: "join", peer: describe(client) });
-      room.add(client);
+    /**
+     * Takes a freshly connected socket for a diagram. It joins the room once
+     * it has introduced itself.
+     * @param {string} roomId the diagram's editing id
+     * @param {object} socket
+     * @param {object} options
+     * @param {boolean} options.readOnly connected through a read-only id
+     * @param {(who: {user: string, name: string}) => string} options.identify
+     *   records the person (private id and display name) and returns their public id
+     */
+    join(roomId, socket, { readOnly, identify }) {
+      const client = {
+        id: randomUUID(),
+        socket,
+        roomId,
+        room: null,
+        readOnly,
+        identify,
+        privateUser: null,
+        publicUser: null,
+        name: "Guest",
+        alive: true,
+      };
+      pending.add(client);
+      client.helloTimer = setTimeout(
+        () => socket.close(POLICY_VIOLATION, "no hello"),
+        HELLO_TIMEOUT_MS,
+      );
 
       socket.on("pong", () => {
         client.alive = true;
       });
-      socket.on("message", (raw) => relay(roomId, client, raw));
+      socket.on("message", (raw) => {
+        const message = parse(raw);
+        if (!client.room) introduce(client, message);
+        else if (message) relay(client, message);
+      });
       socket.on("error", () => socket.terminate());
       socket.on("close", () => {
+        clearTimeout(client.helloTimer);
+        pending.delete(client);
+        const { room } = client;
+        if (!room) return;
         room.delete(client);
         if (room.size === 0 && rooms.get(roomId) === room) rooms.delete(roomId);
         broadcast(roomId, { t: "leave", id: client.id });

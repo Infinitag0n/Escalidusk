@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
 import {
+  connectLive,
   drawRectangle,
   dropImage,
   expectStatus,
   expectStoredCount,
+  liveCloseCode,
   liveElements,
   openDiagram,
   rectangle,
@@ -300,20 +302,7 @@ test("other editors are shown while present and removed when they leave", async 
 });
 
 test.describe("live connection rules", () => {
-  /** Opens a raw connection and collects the messages it receives. */
-  async function connect(baseURL, id, name = "Test") {
-    const socket = new WebSocket(
-      `${baseURL.replace("http", "ws")}/api/diagrams/${id}/live?name=${name}`,
-    );
-    const messages = [];
-    socket.addEventListener("message", (event) => messages.push(JSON.parse(event.data)));
-    await new Promise((resolve, reject) => {
-      socket.addEventListener("open", resolve);
-      socket.addEventListener("error", reject);
-    });
-    await expect.poll(() => messages.some((message) => message.t === "welcome")).toBe(true);
-    return { socket, messages, of: (type) => messages.filter((message) => message.t === type) };
-  }
+  const connect = (baseURL, id, name) => connectLive(baseURL, id, { name });
 
   test("editors hear each other; a read-only connection is listen-only", async ({
     request,
@@ -378,11 +367,6 @@ test.describe("live connection rules", () => {
     one.socket.close();
     two.socket.close();
 
-    const bad = new WebSocket(`${baseURL.replace("http", "ws")}/api/diagrams/nope/live`);
-    const closed = await new Promise((resolve) => {
-      bad.addEventListener("close", (event) => resolve(event.code));
-      bad.addEventListener("error", () => {});
-    });
-    expect(closed).toBe(1008);
+    expect(await liveCloseCode(baseURL, "nope")).toBe(1008);
   });
 });

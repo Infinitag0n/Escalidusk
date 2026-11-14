@@ -9,6 +9,12 @@ const PORT = 3217;
 // the environment variable makes them reuse the folder the main process made.
 process.env.ESCALIDUSK_TEST_DATA ??= mkdtempSync(path.join(tmpdir(), "escalidusk-test-"));
 
+// Some tests open the database directly through Node's built-in SQLite
+// module, which is still flagged experimental; keep that out of the output.
+process.env.NODE_OPTIONS = [process.env.NODE_OPTIONS, "--disable-warning=ExperimentalWarning"]
+  .filter(Boolean)
+  .join(" ");
+
 export default defineConfig({
   testDir: "tests",
   fullyParallel: true,

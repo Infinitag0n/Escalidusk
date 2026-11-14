@@ -4,6 +4,7 @@ export function isDiagramId(value) {
   return UUID_RE.test(value);
 }
 
+/** A fresh random UUID: used for new diagrams and for a browser's user id. */
 export function newDiagramId() {
   // crypto.randomUUID only exists on HTTPS/localhost; self-hosted setups are
   // often plain HTTP on a LAN, so fall back to building a v4 UUID by hand.
@@ -33,14 +34,15 @@ export async function fetchDiagram(id) {
 
 /**
  * `key` is our own fingerprint of the scene; the server passes it on to
- * anyone else who has the diagram open.
+ * anyone else who has the diagram open. `userId` is this browser's private
+ * user id, recorded as the diagram's latest editor.
  * @returns `{ ok: true, version, viewId }` when saved, or `{ ok: false, current }`
  * when the server holds a different version (`current` is null if the diagram vanished).
  */
-export async function saveDiagram(id, baseVersion, scene, key) {
+export async function saveDiagram(id, baseVersion, scene, key, userId) {
   const response = await fetch(`/api/diagrams/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(userId ? { "X-User-Id": userId } : {}) },
     body: JSON.stringify({ baseVersion, key, ...scene }),
   });
   if (response.status === 409) {
