@@ -88,6 +88,10 @@ The tests build the app, start it on a spare port with an empty temporary databa
 
 Running `docker compose watch` instead of `docker compose up` rebuilds and restarts the container whenever the source changes.
 
+## Upgrading Excalidraw
+
+Several features depend on Excalidraw internals (class names, view-mode behaviour, the toolbar's structure). [UPGRADING-EXCALIDRAW.md](UPGRADING-EXCALIDRAW.md) lists each one, where it lives, and what to check after an upgrade.
+
 ## Layout
 
 - `server/` — Fastify server: diagram and image API, serves the built frontend. `store.js` is the SQLite layer, `live.js` the collaboration rooms, `address.js` the address hashing, `admin.js` the backoffice API.

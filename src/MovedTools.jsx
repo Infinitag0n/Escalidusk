@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 // and matching entries are added to the "More tools" menu whenever it opens.
 // The tools themselves are untouched, so their keyboard shortcuts still work.
 //
-// This leans on Excalidraw's class names; check it when upgrading Excalidraw.
+// This leans on Excalidraw's class names; see UPGRADING-EXCALIDRAW.md.
 
 const icon = (paths) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
