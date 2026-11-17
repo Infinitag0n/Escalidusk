@@ -66,7 +66,7 @@ The tests additionally use `[data-testid="main-menu-trigger"]`, `toolbar-selecti
 | `appState.name` holds the diagram's name and is the default export file name | `src/sync.js`, `src/Editor.jsx` | `title.spec.js` |
 | `MainMenu.DefaultItems.*`, `Footer`, `useDevice().editor.isMobile`, `renderTopRightUI(isMobile)` | `src/Editor.jsx` | `topbar.spec.js`, `username.spec.js` |
 | Images are kept by file id in `getFiles()` / `addFiles()`, separate from elements | `src/sync.js` | `editor.spec.js` |
-| The package's fonts are in `dist/prod/fonts`, and `window.EXCALIDRAW_ASSET_PATH = "/"` makes it load them from us | `scripts/copy-assets.mjs`, `index.html` | `editor.spec.js` (fonts served locally) |
+| The package's fonts are in `dist/prod/fonts`, and `window.EXCALIDRAW_ASSET_PATH = "%BASE_URL%"` (the app's own path, with a trailing slash) makes it load them from us | `scripts/copy-assets.mjs`, `index.html` | `editor.spec.js` (fonts served locally) |
 | The stylesheet is imported as `@excalidraw/excalidraw/index.css` | `src/Editor.jsx` | any browser test |
 
 ### The hexagon

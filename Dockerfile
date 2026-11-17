@@ -1,17 +1,29 @@
+# Serve the app under a path such as /draw instead of at the root:
+#   docker build --build-arg BASE_PATH=/draw .
+# It is baked into the frontend at build time and handed to the server as is,
+# so the two always match.
+ARG BASE_PATH=""
+
+# Debian rather than Alpine: on some older kernels (CentOS 7, for one) SQLite
+# under Alpine's musl fails every write with "disk I/O error".
+
 # --- Build the frontend ---
-FROM node:22-alpine AS build
+FROM node:22-bookworm-slim AS build
+ARG BASE_PATH
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+RUN BASE_PATH="$BASE_PATH" npm run build
 
 # --- Runtime: one Node process serves the API and the built frontend ---
-FROM node:22-alpine
+FROM node:22-bookworm-slim
+ARG BASE_PATH
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    BASE_PATH=${BASE_PATH}
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
@@ -20,6 +32,7 @@ RUN mkdir /data && chown node:node /data
 USER node
 VOLUME /data
 EXPOSE 3000
+# The server answers with or without BASE_PATH in front, so this needs no prefix.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
-  CMD wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1
+  CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.PORT}/api/health`).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 CMD ["node", "--disable-warning=ExperimentalWarning", "server/index.js"]

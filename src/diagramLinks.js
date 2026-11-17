@@ -1,4 +1,5 @@
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
+import { appPath } from "./paths.js";
 
 // A link to another diagram is drawn as a hexagon with the diagram's name in
 // it. Excalidraw has no way to add new kinds of shape, so the hexagon is one
@@ -67,7 +68,7 @@ export function createDiagramLink({ view, edit, name, centre }) {
       fillStyle: "solid",
       groupIds: [groupId],
       // The plain link is always the read-only one; it is what any Excalidraw shows.
-      link: `/${view}`,
+      link: appPath(`/${view}`),
       customData: { escalidusk: { diagramLink: { view, ...(edit ? { edit } : {}) } } },
     },
     {

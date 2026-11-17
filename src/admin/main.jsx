@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { appPath } from "../paths.js";
 import "./admin.css";
 
 const PAGE_SIZE = 50;
@@ -8,7 +9,7 @@ const PAGE_SIZE = 50;
 class SignedOut extends Error {}
 
 async function call(path, options = {}) {
-  const response = await fetch(`/api/admin${path}`, {
+  const response = await fetch(appPath(`/api/admin${path}`), {
     ...options,
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
   });
@@ -242,7 +243,7 @@ function Diagrams({ onSignedOut, onChanged }) {
               <Fragment key={diagram.id}>
               <tr>
                 <td>
-                  <a href={`/${diagram.id}`} target="_blank" rel="noreferrer">
+                  <a href={appPath(`/${diagram.id}`)} target="_blank" rel="noreferrer">
                     {diagram.name || <span className="muted">Untitled</span>}
                   </a>
                 </td>
@@ -271,7 +272,7 @@ function Diagrams({ onSignedOut, onChanged }) {
                   </button>
                 </td>
                 <td className="actions">
-                  <a href={`/${diagram.viewId}`} target="_blank" rel="noreferrer">
+                  <a href={appPath(`/${diagram.viewId}`)} target="_blank" rel="noreferrer">
                     View
                   </a>
                   <button type="button" className="danger" onClick={() => remove(diagram)}>

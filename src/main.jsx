@@ -2,21 +2,22 @@ import { Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import Home from "./Home.jsx";
 import { isDiagramId, newDiagramId } from "./api.js";
+import { appPath, routeOf } from "./paths.js";
 import { recentDiagrams } from "./recent.js";
 import "./styles.css";
 
 // The editor is by far the largest part of the app; the home page does not need it.
 const Editor = lazy(() => import("./Editor.jsx"));
 
-// The whole route table:
+// The whole route table (under BASE_PATH, if the app is served under one):
 //   /         the home page if this browser has opened diagrams before, else a new diagram
 //   /new      a new diagram, always
 //   /<uuid>   that diagram
-let path = window.location.pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+let path = (routeOf(window.location.pathname) ?? "").toLowerCase();
 const showHome = path === "" && recentDiagrams().length > 0;
 if (path === "new" || (path === "" && !showHome)) path = newDiagramId();
-if (isDiagramId(path) && window.location.pathname !== `/${path}`) {
-  window.history.replaceState(null, "", `/${path}`);
+if (isDiagramId(path) && window.location.pathname !== appPath(`/${path}`)) {
+  window.history.replaceState(null, "", appPath(`/${path}`));
 }
 
 function Page() {
@@ -32,7 +33,7 @@ function Page() {
     <div className="notice">
       <h1>No diagram here</h1>
       <p>This address is not a diagram link.</p>
-      <a href="/">Start a new diagram</a>
+      <a href={appPath("/")}>Start a new diagram</a>
     </div>
   );
 }

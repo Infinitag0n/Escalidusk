@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { DiagramList } from "./DiagramList.jsx";
+import { appPath } from "./paths.js";
 import { forgetDiagram, recentDiagrams } from "./recent.js";
 
 /** The theme last chosen in the editor; the home page follows it. */
@@ -22,7 +23,7 @@ export default function Home() {
     <main className={`home${storedTheme() === "dark" ? " home--dark" : ""}`}>
       <header>
         <h1>Escalidusk</h1>
-        <a className="home__new" href="/new">
+        <a className="home__new" href={appPath("/new")}>
           New diagram
         </a>
       </header>
@@ -30,7 +31,7 @@ export default function Home() {
       <DiagramList
         entries={entries}
         emptyText="Nothing here any more. Start a new diagram."
-        onPick={(entry) => window.location.assign(`/${entry.id}`)}
+        onPick={(entry) => window.location.assign(appPath(`/${entry.id}`))}
         onForget={(entry) => {
           forgetDiagram(entry.id);
           setEntries(recentDiagrams());

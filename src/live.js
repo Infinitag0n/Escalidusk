@@ -1,3 +1,4 @@
+import { appPath } from "./paths.js";
 import { sharedSettings } from "./sync.js";
 
 const POINTER_INTERVAL_MS = 50;
@@ -162,7 +163,7 @@ export class LiveSession {
   #connect() {
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     const socket = new WebSocket(
-      `${scheme}://${window.location.host}/api/diagrams/${this.#id}/live`,
+      `${scheme}://${window.location.host}${appPath(`/api/diagrams/${this.#id}/live`)}`,
     );
     this.#socket = socket;
     // Introduce ourselves in a message, not in the address: addresses end up in logs.

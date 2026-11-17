@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import { createAddressHasher } from "./address.js";
 import { registerAdmin } from "./admin.js";
+import { normaliseBasePath, withoutBasePath } from "./basePath.js";
 import { sceneWithoutEditLinks } from "./links.js";
 import { DIAGRAM_DELETED, createLiveRooms } from "./live.js";
 import { openStore } from "./store.js";
@@ -13,7 +14,10 @@ import { openStore } from "./store.js";
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const DATA_DIR = path.resolve(process.env.DATA_DIR ?? "data");
-const DIST_DIR = fileURLToPath(new URL("../dist", import.meta.url));
+const DIST_DIR = path.resolve(process.env.DIST_DIR ?? fileURLToPath(new URL("../dist", import.meta.url)));
+// Serve the app under a path such as /draw instead of at the root. The
+// frontend must be built with the same value (see vite.config.js).
+const BASE_PATH = normaliseBasePath(process.env.BASE_PATH);
 // Set when a reverse proxy sits in front, so the client's address is taken
 // from the X-Forwarded-For header instead of being the proxy's own.
 const TRUST_PROXY = process.env.TRUST_PROXY === "true";
@@ -51,6 +55,8 @@ setInterval(() => store.pruneAddresses(ADDRESS_RETENTION_DAYS), DAY_MS).unref();
 const app = Fastify({
   bodyLimit: MAX_SCENE_BYTES,
   trustProxy: TRUST_PROXY,
+  // Routes below are written as if the app were at the root.
+  rewriteUrl: (request) => withoutBasePath(request.url, BASE_PATH),
   logger: {
     serializers: {
       // Addresses are only ever kept hashed, so keep them out of the log too.
@@ -93,7 +99,7 @@ const DELETED = { error: "deleted" };
 
 app.get("/api/health", async () => ({ ok: true }));
 
-registerAdmin(app, { store, live, password: ADMIN_PASSWORD });
+registerAdmin(app, { store, live, password: ADMIN_PASSWORD, basePath: BASE_PATH });
 
 app.get("/api/diagrams/:id", async (request, reply) => {
   const { id } = request.params;
@@ -233,6 +239,7 @@ app.put("/api/diagrams/:id/files/:fileId", async (request, reply) => {
 // In production the built frontend is served from here too. Every non-API
 // path falls back to index.html so /<diagram-uuid> loads the app.
 if (existsSync(DIST_DIR)) {
+  warnIfBuiltForAnotherBasePath();
   await app.register(fastifyStatic, {
     root: DIST_DIR,
     setHeaders(reply, filePath) {
@@ -253,6 +260,21 @@ if (existsSync(DIST_DIR)) {
   });
 } else {
   app.log.warn(`No frontend build at ${DIST_DIR}; serving the API only.`);
+}
+
+/**
+ * A build made for another BASE_PATH loads a blank page: its scripts are
+ * looked for in the wrong place. Say so, rather than leave that to be found.
+ */
+function warnIfBuiltForAnotherBasePath() {
+  const html = readFileSync(path.join(DIST_DIR, "index.html"), "utf8");
+  const assets = html.match(/\ssrc="([^"]*)\/assets\//)?.[1];
+  if (assets !== undefined && assets !== BASE_PATH) {
+    app.log.warn(
+      `The frontend in ${DIST_DIR} was built for BASE_PATH="${assets}", but the server has ` +
+        `BASE_PATH="${BASE_PATH}". Rebuild with the same BASE_PATH, or pages will be blank.`,
+    );
+  }
 }
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

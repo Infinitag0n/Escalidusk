@@ -34,13 +34,38 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `PORT`     | `3000`    | Port the server listens on      |
 | `HOST`     | `0.0.0.0` | Address the server binds to     |
 | `DATA_DIR` | `/data`   | Folder holding the database     |
-
+| `BASE_PATH` | unset | Serve the app under a path, such as `/draw`, instead of at the root. With Docker, set it as a build argument; see below |
 | `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`. Without it the backoffice does not exist |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so the visitor's address is read from `X-Forwarded-For` |
 | `ADDRESS_RETENTION_DAYS` | `90` | How long user-to-address links are kept |
 | `ADDRESS_SECRET` | generated | Key for hashing addresses. By default one is made up and stored in the database |
 
 Live collaboration uses a WebSocket at `/api/diagrams/<id>/live`. Behind a reverse proxy, make sure WebSocket upgrades are passed through, or people will only see each other's changes after a save.
+
+### Serving under a path
+
+To serve the app at `https://example.com/draw` rather than at the root of a host, set `BASE_PATH=/draw`. The path is baked into the frontend when it is built, so with Docker it is a build argument, which the image also hands to the server:
+
+```sh
+docker build --build-arg BASE_PATH=/draw -t escalidusk .
+```
+
+or uncomment `args` in `docker-compose.yml`. Changing it means rebuilding the image. Without Docker, set it for both `npm run build` and `npm start`. The server logs a warning if the two differ.
+
+The proxy may forward requests with the path (`/draw/api/...`) or with it stripped (`/api/...`); the server accepts both. With nginx, for example:
+
+```nginx
+location /draw/ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Diagram links made before a change of path keep their old address. Links between diagrams (the hexagons) still open, because they also name the diagram they point to.
 
 ## Backoffice
 

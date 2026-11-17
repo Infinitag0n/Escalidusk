@@ -44,8 +44,9 @@ function paging(query) {
  * @param {ReturnType<import("./store.js").openStore>} options.store
  * @param {ReturnType<import("./live.js").createLiveRooms>} options.live
  * @param {string} options.password empty to leave the backoffice switched off
+ * @param {string} [options.basePath] the path the app is served under, such as "/draw"
  */
-export function registerAdmin(app, { store, live, password }) {
+export function registerAdmin(app, { store, live, password, basePath = "" }) {
   const enabled = password.length > 0;
   const sessions = new Map(); // token -> expiry time
   let failures = []; // times of recent wrong passwords
@@ -63,7 +64,7 @@ export function registerAdmin(app, { store, live, password }) {
     const secure = request.protocol === "https" ? "; Secure" : "";
     reply.header(
       "Set-Cookie",
-      `${COOKIE}=${value}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}${secure}`,
+      `${COOKIE}=${value}; Path=${basePath}/api/admin; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}${secure}`,
     );
   };
 

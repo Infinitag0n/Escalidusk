@@ -19,6 +19,7 @@ import {
 } from "./diagramLinks.js";
 import { MovedTools, isMovedTool } from "./MovedTools.jsx";
 import { LiveSession } from "./live.js";
+import { appPath, appUrl, routeOf } from "./paths.js";
 import {
   editIdFor,
   forgetDiagram,
@@ -616,8 +617,8 @@ function OpenDiagram({ id, addressId, startViewing }) {
   useEffect(() => {
     if (!loaded) return;
     const shown = viewMode && !loaded.readOnly && viewId ? viewId : id;
-    if (window.location.pathname !== `/${shown}`) {
-      window.history.replaceState(null, "", `/${shown}`);
+    if (window.location.pathname !== appPath(`/${shown}`)) {
+      window.history.replaceState(null, "", appPath(`/${shown}`));
     }
   }, [loaded, viewMode, viewId, id]);
 
@@ -671,7 +672,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
     const edit = target.edit ?? (target.view ? editIdFor(target.view) : null);
     // Remember that this browser may edit it, so its read-only page can offer "Edit".
     if (target.view && edit) rememberEditId(target.view, edit);
-    const address = `/${(!viewing && edit) || target.view || edit}`;
+    const address = appPath(`/${(!viewing && edit) || target.view || edit}`);
     if (newTab) {
       window.open(address, "_blank", "noopener");
       return;
@@ -688,14 +689,17 @@ function OpenDiagram({ id, addressId, startViewing }) {
     } catch {
       return;
     }
-    const linked = url.pathname.slice(1);
-    if (url.origin !== window.location.origin || !isDiagramId(linked)) return;
+    const linked = routeOf(url.pathname);
+    // A hexagon names its diagram itself, so it keeps working even if the
+    // app has since moved to another BASE_PATH.
+    const marked = linkTargetOfElement(element);
+    if (!marked && (url.origin !== window.location.origin || !isDiagramId(linked))) return;
 
     // A hexagon says which ids it carries. For a link someone typed in, work
     // out what kind of id it is from what this browser has seen.
     const known = viewIdFor(linked);
     const target =
-      linkTargetOfElement(element) ??
+      marked ??
       (editIdFor(linked) ? { view: linked } : known ? { view: known, edit: linked } : { edit: linked });
 
     event.preventDefault();
@@ -799,7 +803,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
       <div className="notice">
         <h1>This diagram was deleted</h1>
         <p>It was removed by an administrator and can no longer be opened.</p>
-        <a href="/">Start a new diagram</a>
+        <a href={appPath("/")}>Start a new diagram</a>
       </div>
     );
   }
@@ -823,13 +827,13 @@ function OpenDiagram({ id, addressId, startViewing }) {
   const readOnlyLink = deleted
     ? null
     : loaded.readOnly
-      ? `${window.location.origin}/${id}`
-      : viewId && `${window.location.origin}/${viewId}`;
+      ? appUrl(`/${id}`)
+      : viewId && appUrl(`/${viewId}`);
 
   // Sharing an editing link to a diagram the server has never seen would be
   // odd, so it also waits for the first save (which is when viewId arrives).
   const canEdit = !loaded.readOnly;
-  const editLink = canEdit && viewId && !deleted ? `${window.location.origin}/${id}` : null;
+  const editLink = canEdit && viewId && !deleted ? appUrl(`/${id}`) : null;
   // Every recent diagram except this one (under either of its ids).
   const others = picker
     ? recentDiagrams().filter((entry) => entry.id !== id && linkTargetOf(entry) !== (loaded.readOnly ? id : viewId))
@@ -943,7 +947,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
         />
         {api && !viewing && <MovedTools api={api} activeTool={activeTool} />}
         <MainMenu>
-          <MainMenu.Item onSelect={() => window.open("/new", "_blank")}>New diagram</MainMenu.Item>
+          <MainMenu.Item onSelect={() => window.open(appPath("/new"), "_blank")}>New diagram</MainMenu.Item>
           <MainMenu.Item onSelect={() => setPicker("open")}>Open recent…</MainMenu.Item>
           {canToggleView && (
             <MainMenu.Item shortcut="Space" onSelect={() => setViewMode((on) => !on)}>
