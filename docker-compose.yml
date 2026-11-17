@@ -6,17 +6,15 @@ services:
         # From .env. Baked into the image: rebuild after changing it.
         BASE_PATH: ${BASE_PATH:-}
     image: escalidusk
+    # PORT in .env is the port on this machine; inside, the app is always on 3000.
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
     # Settings from .env (see .env.example).
     env_file:
       - path: .env
         required: false
-    # environment:
-    #   # Switches on the backoffice at /admin (list and delete diagrams). Use a long one.
-    #   ADMIN_PASSWORD: change-me-to-something-long
-    #   # Needed behind a reverse proxy, so visitors are not all seen as the proxy.
-    #   TRUST_PROXY: "true"
+    environment:
+      PORT: "3000"
     volumes:
       - escalidusk-data:/data
     restart: unless-stopped

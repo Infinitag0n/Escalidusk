@@ -31,7 +31,7 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 
 | Variable   | Default   | Meaning                         |
 | ---------- | --------- | ------------------------------- |
-| `PORT`     | `3000`    | Port the server listens on      |
+| `PORT`     | `3000`    | Port the server listens on. With Compose, the port on the host |
 | `HOST`     | `0.0.0.0` | Address the server binds to     |
 | `DATA_DIR` | `/data`   | Folder holding the database     |
 | `BASE_PATH` | unset | Serve the app under a path, such as `/draw`, instead of at the root. With Docker, set it as a build argument; see below |
@@ -97,7 +97,7 @@ OAUTH2_PROXY_COOKIE_SECRET=<output of: openssl rand -hex 16>
 docker compose -f docker-compose.yml -f docker-compose.entra.yml up -d --build
 ```
 
-Port 3000 is now oauth2-proxy, so a reverse proxy in front keeps pointing there (the nginx example above works as it is). Escalidusk is no longer reachable directly. The site must be served over HTTPS: Entra and the sign-in cookie require it.
+The port (`PORT`, 3000 by default) now leads to oauth2-proxy, so a reverse proxy in front keeps pointing there (the nginx example above works as it is). Escalidusk is no longer reachable directly. The site must be served over HTTPS: Entra and the sign-in cookie require it.
 
 Good to know:
 
