@@ -50,7 +50,7 @@ To serve the app at `https://example.com/draw` rather than at the root of a host
 docker build --build-arg BASE_PATH=/draw -t escalidusk .
 ```
 
-or uncomment `args` in `docker-compose.yml`. Changing it means rebuilding the image. Without Docker, set it for both `npm run build` and `npm start`. The server logs a warning if the two differ.
+or, with Compose, put it in `.env` (see `.env.example`). Changing it means rebuilding the image (`--build`). Without Docker, set it for both `npm run build` and `npm start`. The server logs a warning if the two differ.
 
 The proxy may forward requests with the path (`/draw/api/...`) or with it stripped (`/api/...`); the server accepts both. With nginx, for example:
 

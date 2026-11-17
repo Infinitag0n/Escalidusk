@@ -2,10 +2,9 @@ services:
   escalidusk:
     build:
       context: .
-      # args:
-      #   # Serve under a path, such as https://example.com/draw, instead of at the root.
-      #   # Baked into the image: rebuild after changing it.
-      #   BASE_PATH: /draw
+      args:
+        # From .env. Baked into the image: rebuild after changing it.
+        BASE_PATH: ${BASE_PATH:-}
     image: escalidusk
     ports:
       - "3000:3000"

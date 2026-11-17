@@ -12,9 +12,6 @@
 
 services:
   escalidusk:
-    build:
-      args:
-        BASE_PATH: ${BASE_PATH:-}
     # Reachable only through oauth2-proxy, never directly.
     ports: !reset []
 
