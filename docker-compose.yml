@@ -9,6 +9,10 @@ services:
     image: escalidusk
     ports:
       - "3000:3000"
+    # Settings from .env (see .env.example).
+    env_file:
+      - path: .env
+        required: false
     # environment:
     #   # Switches on the backoffice at /admin (list and delete diagrams). Use a long one.
     #   ADMIN_PASSWORD: change-me-to-something-long
