@@ -5,3 +5,4 @@ public/fonts/
 test-results/
 playwright-report/
 notes/
+.env

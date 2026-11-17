@@ -1,0 +1,73 @@
+# Puts a Microsoft Entra ID sign-in in front of Escalidusk, using oauth2-proxy.
+# Only people who can sign in to your tenant get in; once in, everything works
+# as without it. Escalidusk itself never learns who anyone is: the sign-in asks
+# Microsoft for no name or email, and oauth2-proxy passes nothing on.
+#
+# Used on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.entra.yml up -d --build
+#
+# Settings come from a .env file next to this one; see README.md, "Sign in with
+# Entra ID", for setting up the app registration and what to put there.
+
+services:
+  escalidusk:
+    build:
+      args:
+        BASE_PATH: ${BASE_PATH:-}
+    # Reachable only through oauth2-proxy, never directly.
+    ports: !reset []
+
+  oauth2-proxy:
+    # A patch release; update it when new ones come out.
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.6
+    depends_on:
+      - escalidusk
+    # Where your reverse proxy (or browsers) connect, instead of Escalidusk.
+    ports:
+      - "3000:4180"
+    environment:
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_UPSTREAMS: http://escalidusk:3000/
+
+      # Entra ID, through plain OpenID Connect.
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_PROVIDER_DISPLAY_NAME: Microsoft
+      OAUTH2_PROXY_OIDC_ISSUER_URL: https://login.microsoftonline.com/${ENTRA_TENANT_ID:?set ENTRA_TENANT_ID in .env}/v2.0
+      OAUTH2_PROXY_CLIENT_ID: ${ENTRA_CLIENT_ID:?set ENTRA_CLIENT_ID in .env}
+      OAUTH2_PROXY_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:?set ENTRA_CLIENT_SECRET in .env}
+      OAUTH2_PROXY_CODE_CHALLENGE_METHOD: S256
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+
+      # Ask for no name or email: the token then carries only opaque ids, and
+      # the person is told apart by `sub`. Anyone your tenant lets sign in to
+      # the app gets in; limit that in Entra ("Assignment required").
+      OAUTH2_PROXY_SCOPE: openid
+      OAUTH2_PROXY_OIDC_EMAIL_CLAIM: sub
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+
+      # Under the same path as Escalidusk.
+      OAUTH2_PROXY_REDIRECT_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}/oauth2/callback
+      OAUTH2_PROXY_PROXY_PREFIX: ${BASE_PATH:-}/oauth2
+      OAUTH2_PROXY_COOKIE_PATH: ${BASE_PATH:-}/
+      # The API answers 401 instead of redirecting to Microsoft, which a save
+      # cannot follow; the editor then offers to sign in again, keeping changes.
+      OAUTH2_PROXY_API_ROUTES: ^${BASE_PATH:-}/api/
+
+      # The session lives only in this (encrypted) cookie, in the browser.
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET:?set OAUTH2_PROXY_COOKIE_SECRET in .env}
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_COOKIE_SAMESITE: lax
+      # How long a sign-in lasts. Signing in again is usually instant, as
+      # people are still signed in to Microsoft.
+      OAUTH2_PROXY_COOKIE_EXPIRE: 12h
+
+      # Pass nothing about the person on to Escalidusk.
+      OAUTH2_PROXY_PASS_USER_HEADERS: "false"
+      OAUTH2_PROXY_PASS_BASIC_AUTH: "false"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "false"
+
+      # Keep people out of the log: no user ids, no addresses.
+      OAUTH2_PROXY_AUTH_LOGGING_FORMAT: "{{.RequestID}} [{{.Timestamp}}] [{{.Status}}] {{.Message}}"
+      OAUTH2_PROXY_REQUEST_LOGGING_FORMAT: "{{.RequestID}} [{{.Timestamp}}] {{.RequestMethod}} {{.RequestURI}} {{.StatusCode}} {{.RequestDuration}}"
+    restart: unless-stopped

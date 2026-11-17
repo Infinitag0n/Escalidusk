@@ -42,9 +42,14 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 4000,
-    // Two pages: the editor, and the backoffice (which does not load Excalidraw).
+    // The editor, the backoffice (which does not load Excalidraw), and a tiny page for signing in again.
     rollupOptions: {
-      input: { main: page("index.html"), admin: page("admin.html") },
+      input: {
+        main: page("index.html"),
+        admin: page("admin.html"),
+        // Where "Sign in again" lands after a sign-in proxy has done its work.
+        signedIn: page("signed-in.html"),
+      },
     },
   },
 });

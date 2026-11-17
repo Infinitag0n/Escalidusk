@@ -19,7 +19,7 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 
 Escalidusk is an unofficial community project. It is not affiliated with or endorsed by Excalidraw; it embeds the open-source `@excalidraw/excalidraw` editor.
 
-Anyone who has a diagram's editing URL can view and edit it, and anyone with its read-only URL can view it. There is no login and no way to list diagrams; put the service behind a reverse proxy with authentication if it is reachable by people you don't trust.
+Anyone who has a diagram's editing URL can view and edit it, and anyone with its read-only URL can view it. There is no login and no way to list diagrams. To keep out people you don't trust, put a sign-in in front of it, such as [Entra ID](#sign-in-with-entra-id).
 
 ## Run with Docker
 
@@ -66,6 +66,45 @@ location /draw/ {
 ```
 
 Changing the path changes every diagram's address, so links shared before then stop working. Connections between diagrams (the hexagons) keep working: they open by the ids they carry, not by their address, and the address they show is moved to the new path the next time someone edits the diagram.
+
+## Sign in with Entra ID
+
+`docker-compose.entra.yml` puts a Microsoft Entra ID sign-in in front of Escalidusk, using [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/). Only people who can sign in to your tenant get in. Once in, everything works as it does without it: links, sharing and the backoffice are unchanged.
+
+Nobody's name or email is stored or logged. The sign-in asks Microsoft only for an opaque id, which oauth2-proxy keeps in an encrypted cookie in the browser and does not pass on, so Escalidusk itself never learns who anyone is.
+
+**1. Register the app in Entra** (Entra admin center, *App registrations*, *New registration*):
+
+- Accounts in this organizational directory only.
+- Redirect URI: platform *Web*, `https://<host><BASE_PATH>/oauth2/callback`, for example `https://example.com/draw/oauth2/callback`.
+- Under *Certificates & secrets*, add a client secret. It expires (at most after two years); note the date, and replace it before then.
+- To let in only some people: under *Enterprise applications*, open the app, set *Assignment required* to *Yes* in *Properties*, and add them under *Users and groups*.
+
+**2. Put the settings in a `.env` file** next to the compose files:
+
+```sh
+BASE_PATH=/draw                                   # or leave empty for the root
+PUBLIC_URL=https://example.com/draw               # where people open it, without a trailing slash
+ENTRA_TENANT_ID=<Directory (tenant) ID>
+ENTRA_CLIENT_ID=<Application (client) ID>
+ENTRA_CLIENT_SECRET=<the secret's Value>
+OAUTH2_PROXY_COOKIE_SECRET=<output of: openssl rand -hex 16>
+```
+
+**3. Start it:**
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.entra.yml up -d --build
+```
+
+Port 3000 is now oauth2-proxy, so a reverse proxy in front keeps pointing there (the nginx example above works as it is). Escalidusk is no longer reachable directly. The site must be served over HTTPS: Entra and the sign-in cookie require it.
+
+Good to know:
+
+- A sign-in lasts 12 hours (`OAUTH2_PROXY_COOKIE_EXPIRE`). When it runs out while someone is drawing, the editor says so and offers to sign in again in a new tab. Nothing is lost, and saving resumes once they have. Someone removed in Entra keeps access until their sign-in runs out.
+- The server must be able to reach `login.microsoftonline.com`. If it goes out through an HTTP proxy, give the `oauth2-proxy` service `HTTPS_PROXY` and `NO_PROXY=escalidusk`.
+- oauth2-proxy's log has no addresses or user names. A successful sign-in is logged with Microsoft's opaque id for the person.
+- The server's clock must be right (use NTP), or sign-ins fail.
 
 ## Backoffice
 

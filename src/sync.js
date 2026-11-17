@@ -4,7 +4,7 @@ import {
   reconcileElements,
   restoreElements,
 } from "@excalidraw/excalidraw";
-import { DeletedError, fetchDiagram, fetchFile, saveDiagram, uploadFile } from "./api.js";
+import { DeletedError, SignedOutError, fetchDiagram, fetchFile, saveDiagram, uploadFile } from "./api.js";
 
 const SAVE_DELAY_MS = 1000; // quiet time after the last change before saving
 const MAX_SAVE_WAIT_MS = 5000; // ...but never hold unsaved changes longer than this
@@ -107,7 +107,7 @@ export class DiagramSync {
    * @param {string} options.savedKey sceneKey() of the scene as loaded
    * @param {object} options.savedSettings sharedSettings() of the scene as loaded
    * @param {Iterable<string>} options.syncedFileIds image ids already on the server
-   * @param {(status: "saved" | "unsaved" | "saving" | "error") => void} options.onStatus
+   * @param {(status: "saved" | "unsaved" | "saving" | "error" | "signedout") => void} options.onStatus
    * @param {boolean} [options.readOnly] opened through a read-only link
    * @param {(viewId: string) => void} [options.onViewId] told the read-only id after each save
    * @param {string} [options.userId] this browser's private user id, sent with saves
@@ -213,11 +213,13 @@ export class DiagramSync {
         this.markDeleted();
         return;
       }
-      console.error("Saving the diagram failed", error);
+      const signedOut = error instanceof SignedOutError;
+      if (!signedOut) console.error("Saving the diagram failed", error);
       this.#dirty = true;
       this.#remoteOnly = false;
       this.#failed = true;
-      this.#setStatus("error");
+      // Retried all the same: signing in again in another tab lets it through.
+      this.#setStatus(signedOut ? "signedout" : "error");
       this.#schedule(RETRY_DELAY_MS);
     } finally {
       this.#saving = false;

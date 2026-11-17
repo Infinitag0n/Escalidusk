@@ -30,6 +30,8 @@ services:
         - action: rebuild
           path: ./index.html
         - action: rebuild
+          path: ./signed-in.html
+        - action: rebuild
           path: ./vite.config.js
         - action: rebuild
           path: ./package.json

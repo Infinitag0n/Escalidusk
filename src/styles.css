@@ -72,6 +72,7 @@ body,
 }
 
 .save-status--error,
+.save-status--signedout,
 .save-status--deleted {
   color: #fff;
   background: #c92a2a;
@@ -218,6 +219,11 @@ body,
   color: #fff;
   background: #c92a2a;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.deleted-banner a {
+  color: inherit;
+  font-weight: 600;
 }
 
 .editor {

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Signed in - Escalidusk</title>
+    <!--
+      "Sign in again" opens this page in a new tab. A sign-in proxy in front of
+      the app (such as oauth2-proxy) catches the request, has the person sign
+      in, and then lets them through to here. The tab that sent them keeps
+      retrying its save and gets through now.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+        margin: 0;
+        padding: 0 1rem;
+        background: Canvas;
+        color: CanvasText;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Signed in</h1>
+      <p>You can close this tab. Your diagram saves again.</p>
+    </main>
+    <script>
+      // Browsers often refuse this after the sign-in redirects; the text above then stays.
+      window.close();
+    </script>
+  </body>
+</html>

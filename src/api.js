@@ -25,8 +25,24 @@ export class DeletedError extends Error {
   }
 }
 
+/**
+ * A sign-in in front of the app (a proxy such as oauth2-proxy) turned the
+ * request away: the person's session ran out. Signing in again in another tab
+ * lets the next retry through.
+ */
+export class SignedOutError extends Error {
+  constructor() {
+    super("Signed out");
+  }
+}
+
+// API requests never follow redirects: a redirect can only be a sign-in proxy
+// sending us to its login page, which a fetch cannot get through anyway.
+const API = { redirect: "manual" };
+
 async function failure(response) {
   if (response.status === 410) return new DeletedError();
+  if (response.status === 401 || response.type === "opaqueredirect") return new SignedOutError();
   return new Error(`Request failed: ${response.status} ${response.statusText}`);
 }
 
@@ -36,7 +52,7 @@ async function failure(response) {
  * present when the diagram was opened through its editing id.
  */
 export async function fetchDiagram(id) {
-  const response = await fetch(appPath(`/api/diagrams/${id}`), { cache: "no-store" });
+  const response = await fetch(appPath(`/api/diagrams/${id}`), { ...API, cache: "no-store" });
   if (response.status === 404) return null;
   if (!response.ok) throw await failure(response);
   return response.json();
@@ -51,6 +67,7 @@ export async function fetchDiagram(id) {
  */
 export async function saveDiagram(id, baseVersion, scene, key, userId) {
   const response = await fetch(appPath(`/api/diagrams/${id}`), {
+    ...API,
     method: "PUT",
     headers: { "Content-Type": "application/json", ...(userId ? { "X-User-Id": userId } : {}) },
     body: JSON.stringify({ baseVersion, key, ...scene }),
@@ -70,6 +87,7 @@ export async function saveDiagram(id, baseVersion, scene, key, userId) {
  */
 export async function fetchSummaries(ids) {
   const response = await fetch(appPath("/api/diagrams/summaries"), {
+    ...API,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids }),
@@ -82,6 +100,7 @@ export async function fetchSummaries(ids) {
 export async function uploadFile(diagramId, file) {
   const blob = await (await fetch(file.dataURL)).blob();
   const response = await fetch(appPath(`/api/diagrams/${diagramId}/files/${file.id}`), {
+    ...API,
     method: "PUT",
     headers: { "Content-Type": file.mimeType },
     body: blob,
@@ -91,7 +110,7 @@ export async function uploadFile(diagramId, file) {
 
 /** Downloads a stored image and returns it in Excalidraw's file record shape. */
 export async function fetchFile(diagramId, fileId) {
-  const response = await fetch(appPath(`/api/diagrams/${diagramId}/files/${fileId}`));
+  const response = await fetch(appPath(`/api/diagrams/${diagramId}/files/${fileId}`), API);
   if (!response.ok) throw await failure(response);
   const blob = await response.blob();
   const dataURL = await new Promise((resolve, reject) => {

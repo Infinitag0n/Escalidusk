@@ -120,6 +120,7 @@ const STATUSES = {
   unsaved: { label: "Unsaved", title: "Changes will be saved in a moment" },
   saving: { label: "Saving…", title: "Saving changes" },
   error: { label: "Save failed", title: "Saving failed. Retrying automatically." },
+  signedout: { label: "Signed out", title: "Sign in again to save. Your changes are kept." },
   deleted: { label: "Deleted", title: "This diagram was deleted. Changes are no longer saved." },
 };
 
@@ -849,6 +850,14 @@ function OpenDiagram({ id, addressId, startViewing }) {
       onPointerDownCapture={onPointerDownCapture}
       onKeyDown={onKeyDown}
     >
+      {status === "signedout" && !deleted && (
+        <div className="deleted-banner" role="alert">
+          You were signed out. Your changes are kept.{" "}
+          <a href={appPath("/signed-in.html")} target="_blank" rel="noopener">
+            Sign in again
+          </a>
+        </div>
+      )}
       {deleted && (
         <div className="deleted-banner" role="alert">
           This diagram was deleted by an administrator. What you see is your copy; nothing is saved
