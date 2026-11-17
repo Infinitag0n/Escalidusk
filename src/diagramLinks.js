@@ -18,6 +18,22 @@ const UNTITLED = "Untitled";
 
 const labelFor = (name) => name.trim() || UNTITLED;
 
+/**
+ * The address a hexagon's plain link holds: the read-only page under the
+ * app's current path. Stored links can predate a change of BASE_PATH; see
+ * withCurrentAddresses.
+ */
+const addressOf = (view) => appPath(`/${view}`);
+
+/** An element with some fields changed, as a new version so the change is saved and reaches collaborators. */
+const changed = (element, fields) => ({
+  ...element,
+  ...fields,
+  version: element.version + 1,
+  versionNonce: crypto.getRandomValues(new Uint32Array(1))[0],
+  updated: Date.now(),
+});
+
 /** The size a piece of label text takes up, as Excalidraw measures it. */
 function measure(text, { fontSize = FONT_SIZE, fontFamily } = {}) {
   const [element] = convertToExcalidrawElements([
@@ -68,7 +84,7 @@ export function createDiagramLink({ view, edit, name, centre }) {
       fillStyle: "solid",
       groupIds: [groupId],
       // The plain link is always the read-only one; it is what any Excalidraw shows.
-      link: appPath(`/${view}`),
+      link: addressOf(view),
       customData: { escalidusk: { diagramLink: { view, ...(edit ? { edit } : {}) } } },
     },
     {
@@ -112,7 +128,7 @@ export function linkedDiagramIds(elements) {
  * @returns {object[] | null} the scene with relabelled elements swapped in, or null if nothing changed
  */
 export function withCurrentNames(elements, summaries) {
-  let changed = false;
+  let relabelled = false;
   const next = elements.map((element) => {
     const target = labelTargetOf(element);
     const name = target && !element.isDeleted ? summaries[target]?.name : undefined;
@@ -121,20 +137,33 @@ export function withCurrentNames(elements, summaries) {
     if (element.text === text) return element;
 
     const size = measure(text, element);
-    changed = true;
-    return {
-      ...element,
+    relabelled = true;
+    return changed(element, {
       text,
       originalText: text,
       ...size,
       // Keep the label centred where it was.
       x: element.x + element.width / 2 - size.width / 2,
       y: element.y + element.height / 2 - size.height / 2,
-      // A new version, so the change is saved and reaches collaborators.
-      version: element.version + 1,
-      versionNonce: crypto.getRandomValues(new Uint32Array(1))[0],
-      updated: Date.now(),
-    };
+    });
   });
-  return changed ? next : null;
+  return relabelled ? next : null;
+}
+
+/**
+ * Points hexagons made under another BASE_PATH at the current one. Following
+ * a hexagon goes by the ids it carries, so it works either way; this fixes the
+ * address Excalidraw shows and exports.
+ * @param {readonly object[]} elements the whole scene
+ * @returns {object[] | null} the scene with the links fixed, or null if none needed it
+ */
+export function withCurrentAddresses(elements) {
+  let moved = false;
+  const next = elements.map((element) => {
+    const target = element.isDeleted ? null : linkTargetOfElement(element);
+    if (!target || element.link === addressOf(target.view)) return element;
+    moved = true;
+    return changed(element, { link: addressOf(target.view) });
+  });
+  return moved ? next : null;
 }

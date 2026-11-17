@@ -65,7 +65,7 @@ location /draw/ {
 }
 ```
 
-Diagram links made before a change of path keep their old address. Links between diagrams (the hexagons) still open, because they also name the diagram they point to.
+Changing the path changes every diagram's address, so links shared before then stop working. Connections between diagrams (the hexagons) keep working: they open by the ids they carry, not by their address, and the address they show is moved to the new path the next time someone edits the diagram.
 
 ## Backoffice
 

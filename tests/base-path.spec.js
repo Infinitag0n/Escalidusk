@@ -110,6 +110,64 @@ test("links to other diagrams and the backoffice point under the path", async ({
   await page.close();
 });
 
+/** Follows the link on the hexagon in the middle of the screen, through its link icon. */
+async function followLink(page, hexagon) {
+  const { width, height } = page.viewportSize();
+  await page.mouse.click(width / 2, height - 120); // empty canvas: deselect
+  const icon = { x: width / 2 + hexagon.width / 2 + 7, y: height / 2 - hexagon.height / 2 - 9 };
+  await page.mouse.move(icon.x - 30, icon.y + 30);
+  await page.mouse.move(icon.x, icon.y, { steps: 4 });
+  await page.mouse.click(icon.x, icon.y);
+}
+
+const get = async (id) => (await fetch(`${server.url}/api/diagrams/${id}`)).json();
+
+test("links between diagrams made before the path changed still open", async ({ browser }) => {
+  const page = await browser.newPage();
+  const title = page.getByLabel("Diagram name");
+  const make = async (name) => {
+    await page.goto(`${server.url}/new`);
+    await page.waitForSelector(".excalidraw canvas");
+    await title.fill(name);
+    await title.press("Enter");
+    await expectStatus(page, "saved");
+    return new URL(page.url()).pathname.slice(BASE.length + 1);
+  };
+  const target = await make("Old target");
+  const source = await make("Old source");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: /Old target/ }).click();
+  await expect.poll(async () => (await get(source)).scene.elements.length).toBe(2);
+  await expectStatus(page, "saved");
+
+  // Make it look as if the hexagon was drawn while the app was at the root.
+  const before = await get(source);
+  const hexagon = before.scene.elements.find((element) => element.type === "line");
+  const { viewId } = await get(target);
+  expect(hexagon.link).toBe(`${BASE}/${viewId}`);
+  const elements = before.scene.elements.map((element) =>
+    element === hexagon ? { ...element, link: `/${viewId}`, version: element.version + 1 } : element,
+  );
+  const put = await fetch(`${server.url}/api/diagrams/${source}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ baseVersion: before.version, elements, appState: before.scene.appState }),
+  });
+  expect(put.ok).toBe(true);
+
+  await page.goto(`${server.url}/${source}`);
+  await page.waitForSelector(".excalidraw canvas");
+  // Opening it for editing moves the stored address to the current path.
+  const storedLink = async () =>
+    (await get(source)).scene.elements.find((element) => element.id === hexagon.id).link;
+  await expect.poll(storedLink, { timeout: 15_000 }).toBe(`${BASE}/${viewId}`);
+  await expectStatus(page, "saved");
+  await followLink(page, hexagon);
+  await page.waitForURL(`**${BASE}/${target}`);
+  await expect(title).toHaveValue("Old target");
+  await page.close();
+});
+
 test("a proxy may also strip the path before forwarding", async () => {
   expect((await fetch(`${server.origin}/api/health`)).ok).toBe(true);
   const page = await fetch(`${server.origin}/`);

@@ -15,6 +15,7 @@ import {
   createDiagramLink,
   linkTargetOfElement,
   linkedDiagramIds,
+  withCurrentAddresses,
   withCurrentNames,
 } from "./diagramLinks.js";
 import { MovedTools, isMovedTool } from "./MovedTools.jsx";
@@ -562,10 +563,13 @@ function OpenDiagram({ id, addressId, startViewing }) {
 
   // Labels of links to other diagrams follow those diagrams' names. Checked
   // shortly after opening, and again whenever the window regains focus.
+  // Their addresses follow the app's path, in case it moved since they were made.
   useEffect(() => {
     if (!api || !loaded) return undefined;
     let cancelled = false;
     const refresh = async () => {
+      const moved = withCurrentAddresses(api.getSceneElementsIncludingDeleted());
+      if (moved) api.updateScene({ elements: moved, captureUpdate: CaptureUpdateAction.NEVER });
       const ids = linkedDiagramIds(api.getSceneElementsIncludingDeleted());
       if (ids.length === 0) return;
       try {
