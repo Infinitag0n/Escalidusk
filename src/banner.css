@@ -1,0 +1,30 @@
+/* The notice across the top set with BANNER (see server/banner.js). The
+   page becomes a column: the banner, then the app filling the rest. */
+
+.app-banner {
+  flex: none;
+  box-sizing: border-box;
+  height: 1.5rem;
+  padding: 0 0.75rem;
+  overflow: hidden;
+  font: 600 0.8125rem/1.5rem system-ui, sans-serif;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  /* Dark on yellow reads the same in light and dark themes. */
+  color: #3b3000;
+  background: #ffd43b;
+}
+
+body:has(> .app-banner) {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Its own height to start from (the full page for the editor, the content for
+   the backoffice), shrunk to leave room for the banner. */
+.app-banner ~ #root {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}

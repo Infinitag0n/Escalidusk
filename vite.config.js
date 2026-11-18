@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { bannerText, withBanner } from "./server/banner.js";
 import { normaliseBasePath } from "./server/basePath.js";
 
 const page = (name) => fileURLToPath(new URL(name, import.meta.url));
@@ -22,9 +23,16 @@ const adminPage = {
   },
 };
 
+// The server writes BANNER into the pages it serves; do the same while developing.
+const devBanner = {
+  name: "escalidusk-banner",
+  apply: "serve",
+  transformIndexHtml: (html) => withBanner(html, bannerText(process.env.BANNER)),
+};
+
 export default defineConfig({
   base: `${BASE_PATH}/`,
-  plugins: [react(), adminPage],
+  plugins: [react(), adminPage, devBanner],
   define: {
     // Excalidraw reads this at runtime; without it the browser build
     // fails with "process is not defined".

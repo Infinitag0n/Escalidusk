@@ -4,6 +4,7 @@ import Home from "./Home.jsx";
 import { isDiagramId, newDiagramId } from "./api.js";
 import { appPath, routeOf } from "./paths.js";
 import { recentDiagrams } from "./recent.js";
+import "./banner.css";
 import "./styles.css";
 
 // The editor is by far the largest part of the app; the home page does not need it.

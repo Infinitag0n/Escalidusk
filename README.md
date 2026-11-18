@@ -34,6 +34,7 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `PORT`     | `3000`    | Port the server listens on. With Compose, the port on the host |
 | `HOST`     | `0.0.0.0` | Address the server binds to     |
 | `DATA_DIR` | `/data`   | Folder holding the database     |
+| `BANNER` | unset | A thin yellow notice across the top of every page, such as `Experimental build 2026-11-18`. Plain text. Changing it needs only a restart |
 | `BASE_PATH` | unset | Serve the app under a path, such as `/draw`, instead of at the root. With Docker, set it as a build argument; see below |
 | `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`. Without it the backoffice does not exist |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so the visitor's address is read from `X-Forwarded-For` |

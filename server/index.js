@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import { createAddressHasher } from "./address.js";
 import { registerAdmin } from "./admin.js";
+import { bannerText, withBanner } from "./banner.js";
 import { normaliseBasePath, withoutBasePath } from "./basePath.js";
 import { sceneWithoutEditLinks } from "./links.js";
 import { DIAGRAM_DELETED, createLiveRooms } from "./live.js";
@@ -24,6 +25,8 @@ const TRUST_PROXY = process.env.TRUST_PROXY === "true";
 // How long to remember which (hashed) addresses a user was seen from.
 const ADDRESS_RETENTION_DAYS = Number(process.env.ADDRESS_RETENTION_DAYS ?? 90);
 const DAY_MS = 24 * 60 * 60 * 1000;
+// A thin notice across the top of every page, such as "Experimental build".
+const BANNER = bannerText(process.env.BANNER);
 // The backoffice at /admin exists only when this is set.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 
@@ -240,8 +243,19 @@ app.put("/api/diagrams/:id/files/:fileId", async (request, reply) => {
 // path falls back to index.html so /<diagram-uuid> loads the app.
 if (existsSync(DIST_DIR)) {
   warnIfBuiltForAnotherBasePath();
+  // The two app pages are served from memory, with the banner (if any) in them.
+  const pages = Object.fromEntries(
+    ["index.html", "admin.html"].map((name) => [
+      name,
+      withBanner(readFileSync(path.join(DIST_DIR, name), "utf8"), BANNER),
+    ]),
+  );
   await app.register(fastifyStatic, {
     root: DIST_DIR,
+    // Never the page files themselves, nor folders ("/" above all): those
+    // fall through to the handler below, which serves `pages`.
+    index: false,
+    allowedPath: (pathName) => !pathName.endsWith("/") && !Object.hasOwn(pages, pathName.slice(1)),
     setHeaders(reply, filePath) {
       // Vite fingerprints everything under assets/, so it can be cached forever.
       const immutable = filePath.includes(`${path.sep}assets${path.sep}`);
@@ -255,8 +269,11 @@ if (existsSync(DIST_DIR)) {
     if (request.method !== "GET" || request.url.startsWith("/api/")) {
       return reply.code(404).send({ error: "not found" });
     }
-    const page = /^\/admin\/?(\?|$)/.test(request.url) ? "admin.html" : "index.html";
-    return reply.sendFile(page);
+    const page = /^\/admin(\.html)?\/?(\?|$)/.test(request.url) ? "admin.html" : "index.html";
+    return reply
+      .type("text/html; charset=utf-8")
+      .header("Cache-Control", "no-cache")
+      .send(pages[page]);
   });
 } else {
   app.log.warn(`No frontend build at ${DIST_DIR}; serving the API only.`);

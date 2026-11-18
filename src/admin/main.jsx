@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { appPath } from "../paths.js";
+import "../banner.css";
 import "./admin.css";
 
 const PAGE_SIZE = 50;
