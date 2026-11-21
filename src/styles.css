@@ -208,6 +208,34 @@ body,
   background: transparent;
 }
 
+/* The feedback button: the same look as Excalidraw's help button beside it. */
+.excalidraw .feedback-button {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--lg-button-size, 2.25rem);
+  height: var(--lg-button-size, 2.25rem);
+  margin: 0 0 0 0.25rem;
+  padding: 0.625rem;
+  border: 0;
+  border-radius: var(--border-radius-lg, 0.5rem);
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1px var(--color-surface-lowest, #fff);
+  color: var(--color-on-surface, #1b1b1f);
+  background: var(--color-surface-low, #ececf4);
+  cursor: pointer;
+}
+
+.excalidraw .feedback-button:hover {
+  background: var(--button-hover-bg, var(--island-bg-color, #fff));
+}
+
+.excalidraw .feedback-button svg {
+  width: var(--lg-icon-size, 1rem);
+  height: var(--lg-icon-size, 1rem);
+}
+
 .excalidraw .user-name::placeholder {
   color: var(--color-on-surface, #1b1b1f);
   opacity: 0.4;
@@ -434,17 +462,91 @@ body,
   overflow-y: auto;
 }
 
-/* "Connect" sits just right of the toolbar, outside it (see ConnectButton). */
-.excalidraw .toolbar-side {
+/* --- The "Send feedback" dialog --- */
+
+.feedback form {
+  display: flex;
+  flex-direction: column;
+}
+
+.feedback textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 6rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--list-line);
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  resize: vertical;
+  color: inherit;
+  background: transparent;
+}
+
+.feedback textarea:focus {
+  border-color: #6965db;
+  outline: 0;
+}
+
+.feedback__actions {
   display: flex;
   align-items: center;
-  margin-left: 0.5rem;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.feedback__actions button {
+  padding: 0.45rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  background: #6965db;
+  cursor: pointer;
+}
+
+.feedback__actions button:hover:not(:disabled) {
+  background: #5b57d1;
+}
+
+.feedback__actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.feedback__error {
+  font-size: 0.8125rem;
+  color: #c92a2a;
+}
+
+.feedback__thanks {
+  margin: 0.75rem 0 0;
+  font-size: 0.9375rem;
+}
+
+/* "Connect" sits just left of the toolbar, outside it (see ConnectButton).
+   It hangs off the toolbar's row without taking up room in it, so the
+   toolbar stays centred. */
+.excalidraw .App-menu_top .App-toolbar-container {
+  position: relative;
+}
+
+.excalidraw .toolbar-side {
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  display: flex;
+  margin-right: 0.5rem;
+  transform: translateY(-50%);
   pointer-events: auto;
 }
 
-/* In a narrow window it would push the buttons on the right off the screen;
-   the menu still offers it. */
-@media (max-width: 960px) {
+/* In a narrow window it would leave no room for the diagram's name; the menu
+   still offers it. */
+@media (max-width: 1000px) {
   .excalidraw .toolbar-side {
     display: none;
   }

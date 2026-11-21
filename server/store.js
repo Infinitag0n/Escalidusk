@@ -100,6 +100,14 @@ export function openStore(dataDir) {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     ) WITHOUT ROWID;
+
+    -- What people wrote through "Send feedback". Deliberately nothing about
+    -- who wrote it or from where: only the words and the time.
+    CREATE TABLE IF NOT EXISTS feedback (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      message    TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
   `);
 
   // Bring databases from earlier versions up to date.
@@ -248,6 +256,14 @@ export function openStore(dataDir) {
             (SELECT COALESCE(SUM(length(data)), 0) FROM files) AS imageSize`,
   );
 
+  const insertFeedback = db.prepare("INSERT INTO feedback (message, created_at) VALUES (?, ?)");
+  const countFeedback = db.prepare("SELECT COUNT(*) AS total FROM feedback");
+  const selectFeedback = db.prepare(
+    `SELECT id, message, created_at AS createdAt FROM feedback
+     ORDER BY created_at DESC, id DESC LIMIT $limit OFFSET $offset`,
+  );
+  const deleteFeedback = db.prepare("DELETE FROM feedback WHERE id = ?");
+
   // user id -> { publicId, name, addresses: Map(address hash -> time last written) }
   const recentlySeen = new Map();
 
@@ -352,6 +368,27 @@ export function openStore(dataDir) {
         total: countUserList.get({ $search: search }).total,
         users: selectUserList.all({ $search: search, $limit: limit, $offset: offset }),
       };
+    },
+
+    /** Keeps a message sent through "Send feedback". Nothing about the sender is stored. */
+    addFeedback(message) {
+      insertFeedback.run(message, Date.now());
+    },
+
+    /**
+     * Feedback for the backoffice, newest first. Without a limit, all of it.
+     * @returns {{total: number, feedback: {id: number, message: string, createdAt: number}[]}}
+     */
+    listFeedback({ limit = -1, offset = 0 } = {}) {
+      return {
+        total: countFeedback.get().total,
+        feedback: selectFeedback.all({ $limit: limit, $offset: offset }),
+      };
+    },
+
+    /** Deletes one feedback message. False if there was none with that id. */
+    deleteFeedback(id) {
+      return deleteFeedback.run(id).changes > 0;
     },
 
     /** Totals for the backoffice, plus what removeOrphanedImages() would free. */

@@ -33,7 +33,7 @@ function paging(query) {
 
 /**
  * The backoffice API, under /api/admin: listing and deleting diagrams, seeing
- * who uses the server, and housekeeping.
+ * who uses the server, reading feedback, and housekeeping.
  *
  * It exists only when a password is set: without one, none of these routes
  * are registered. With one, a correct password buys a session cookie; every
@@ -139,6 +139,38 @@ export function registerAdmin(app, { store, live, password, basePath = "" }) {
       });
 
       admin.get("/users", async (request) => store.listUsers(paging(request.query)));
+
+      admin.get("/feedback", async (request) => store.listFeedback(paging(request.query)));
+
+      // Everything, as a file to keep: JSON, or plain text to read.
+      admin.get("/feedback/export", async (request, reply) => {
+        const { feedback } = store.listFeedback();
+        const entries = feedback.map(({ message, createdAt }) => ({
+          sentAt: new Date(createdAt).toISOString(),
+          message,
+        }));
+        const text = request.query.format === "text";
+        const body = text
+          ? entries.map((entry) => `${entry.sentAt}\n${entry.message}\n`).join("\n----\n\n")
+          : JSON.stringify(entries, null, 2);
+        const day = new Date().toISOString().slice(0, 10);
+        return reply
+          .type(text ? "text/plain; charset=utf-8" : "application/json; charset=utf-8")
+          .header(
+            "Content-Disposition",
+            `attachment; filename="escalidusk-feedback-${day}.${text ? "txt" : "json"}"`,
+          )
+          .send(body);
+      });
+
+      admin.delete("/feedback/:id", async (request, reply) => {
+        const id = Number(request.params.id);
+        if (!Number.isSafeInteger(id) || id < 1) {
+          return reply.code(400).send({ error: "invalid feedback id" });
+        }
+        if (!store.deleteFeedback(id)) return reply.code(404).send({ error: "not found" });
+        return reply.code(204).send();
+      });
 
       admin.post("/remove-orphaned-images", async () => ({
         removed: store.removeOrphanedImages(),

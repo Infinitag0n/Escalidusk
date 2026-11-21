@@ -5,7 +5,7 @@ const nameField = (page) => page.getByLabel("Your name");
 const storedName = (page) =>
   page.evaluate(() => JSON.parse(localStorage.getItem("escalidusk:username")));
 
-test("your name sits in the bottom-right corner, before the help button, as plain text", async ({
+test("your name sits in the bottom-right corner, before the feedback and help buttons, as plain text", async ({
   page,
 }) => {
   await openDiagram(page);
@@ -23,8 +23,11 @@ test("your name sits in the bottom-right corner, before the help button, as plai
   const { width, height } = page.viewportSize();
   expect(box.x).toBeGreaterThan(width / 2);
   expect(box.y).toBeGreaterThan(height / 2);
-  expect(box.x + box.width).toBeLessThanOrEqual(help.x);
-  expect(help.x - (box.x + box.width)).toBeLessThan(24);
+  // Only the feedback button comes between the name and Help.
+  const feedback = await page.getByRole("button", { name: "Send feedback", exact: true }).boundingBox();
+  expect(box.x + box.width).toBeLessThanOrEqual(feedback.x);
+  expect(feedback.x - (box.x + box.width)).toBeLessThan(24);
+  expect(feedback.x + feedback.width).toBeLessThanOrEqual(help.x);
   expect(Math.abs(box.y + box.height / 2 - (help.y + help.height / 2))).toBeLessThanOrEqual(2);
 });
 

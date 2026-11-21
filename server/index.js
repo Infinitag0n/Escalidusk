@@ -34,6 +34,9 @@ const MAX_SCENE_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_LIVE_MESSAGE_BYTES = 8 * 1024 * 1024;
 
+// Feedback is a few paragraphs at most.
+const MAX_FEEDBACK_CHARS = 4000;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const FILE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const IMAGE_TYPES = new Set([
@@ -103,6 +106,24 @@ const DELETED = { error: "deleted" };
 app.get("/api/health", async () => ({ ok: true }));
 
 registerAdmin(app, { store, live, password: ADMIN_PASSWORD, basePath: BASE_PATH });
+
+// What this server offers, for the pages to adapt to.
+app.get("/api/config", async () => ({ feedback: Boolean(ADMIN_PASSWORD) }));
+
+// Feedback is read in the backoffice, so without one there is nowhere to send it.
+if (ADMIN_PASSWORD) {
+  // Only the words are kept (and the time): not who sent them, nor from where.
+  app.post("/api/feedback", async (request, reply) => {
+    const message = typeof request.body?.message === "string" ? request.body.message.trim() : "";
+    if (!message || message.length > MAX_FEEDBACK_CHARS) {
+      return reply
+        .code(400)
+        .send({ error: `expected { message: 1 to ${MAX_FEEDBACK_CHARS} characters }` });
+    }
+    store.addFeedback(message);
+    return reply.code(204).send();
+  });
+}
 
 app.get("/api/diagrams/:id", async (request, reply) => {
   const { id } = request.params;

@@ -193,23 +193,26 @@ test("only other diagrams are offered, and a read-only page cannot add links", a
   await expect(page.getByRole("button", { name: "Connect to a diagram…" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  // It sits just right of the toolbar, outside it, level with it.
+  // It sits just left of the toolbar, outside it, level with it. The toolbar
+  // stays in the middle of the page, and the diagram's name stops short of it.
   const connect = page.getByRole("button", { name: "Connect", exact: true });
   const place = async () => {
     const toolbar = await page.locator(".App-toolbar").boundingBox();
     const button = await connect.boundingBox();
-    const share = await page.getByRole("button", { name: "Share", exact: true }).boundingBox();
+    const name = await page.getByLabel("Diagram name").boundingBox();
     return {
-      gap: button.x - (toolbar.x + toolbar.width),
+      gap: toolbar.x - (button.x + button.width),
       offCentre: Math.abs(button.y + button.height / 2 - (toolbar.y + toolbar.height / 2)),
-      beforeShare: share.x - (button.x + button.width),
+      toolbarOffCentre: Math.abs(toolbar.x + toolbar.width / 2 - page.viewportSize().width / 2),
+      afterName: button.x - (name.x + name.width),
     };
   };
   const placed = await place();
   expect(placed.gap).toBeGreaterThan(4);
   expect(placed.gap).toBeLessThan(24);
   expect(placed.offCentre).toBeLessThan(2);
-  expect(placed.beforeShare).toBeGreaterThan(0);
+  expect(placed.toolbarOffCentre).toBeLessThan(2);
+  expect(placed.afterName).toBeGreaterThan(4);
   await expect(page.locator(".App-toolbar").getByRole("button", { name: "Connect" })).toHaveCount(0);
 
   // It is gone while viewing and back, in the same place, afterwards.
@@ -221,11 +224,10 @@ test("only other diagrams are offered, and a read-only page cannot add links", a
   await expect(connect).toHaveCount(1);
   expect(await place()).toEqual(placed);
 
-  // In a narrow window it gives way to the buttons on the right; the menu still has it.
-  await page.setViewportSize({ width: 900, height: 720 });
+  // In a narrow window it gives way to the diagram's name; the menu still has it.
+  await page.setViewportSize({ width: 950, height: 720 });
   await expect(connect).toBeHidden();
-  const status = await page.getByRole("status").first().boundingBox();
-  expect(status.x + status.width).toBeLessThanOrEqual(900);
+  await expect(page.getByLabel("Diagram name")).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 720 });
   await expect(connect).toBeVisible();
 

@@ -219,6 +219,22 @@ nav button[aria-selected="true"] {
   color: var(--muted);
 }
 
+.export {
+  margin: 0 0 0.75rem;
+}
+
+.export a + a {
+  margin-left: 0.5rem;
+}
+
+/* Feedback is prose: let it wrap, and keep its line breaks. */
+td.message {
+  width: 100%;
+  min-width: 16rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .table-scroll {
   overflow-x: auto;
   border: 1px solid var(--line);

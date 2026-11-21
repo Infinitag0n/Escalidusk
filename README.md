@@ -10,7 +10,7 @@ Self-hosted [Excalidraw](https://github.com/excalidraw/excalidraw) with server-s
 - Give a diagram a name by typing next to the menu button. It becomes the browser tab title and the default file name for exports.
 - Images are stored separately from the scene, so saves stay small.
 - Every diagram also has a read-only link: a second UUID that opens the same diagram for viewing only. The **Share** button (top right) copies it once the diagram has been saved; **Share Edit** copies the editing link. On phones both are in the menu. The read-only link cannot be turned back into the editing link.
-- Link diagrams to each other: **Connect** (beside the toolbar, or in the menu) adds a hexagon that opens a diagram you pick from your recent ones. It shows that diagram's name and follows it when the diagram is renamed. You choose whether people who can edit this diagram get the linked one for editing (the default) or read-only. People viewing through the read-only link always get the linked diagram read-only: the server leaves the editing link out of everything it sends them.
+- Link diagrams to each other: **Connect** (left of the toolbar, or in the menu) adds a hexagon that opens a diagram you pick from your recent ones. It shows that diagram's name and follows it when the diagram is renamed. You choose whether people who can edit this diagram get the linked one for editing (the default) or read-only. People viewing through the read-only link always get the linked diagram read-only: the server leaves the editing link out of everything it sends them.
 - Moving between diagrams keeps your mode: from editing you land on the editable page when you may edit the target, from viewing you land on its read-only page.
 - Any other link on an element that points to a diagram on the same server also opens in place.
 - Live collaboration: everyone with a diagram open sees each other's changes and cursors as they happen. People on the read-only link take part too: they follow along live, are seen by the others, and can point at things with the laser pointer (the **Laser** button, or K), without being able to change anything.
@@ -36,7 +36,7 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `DATA_DIR` | `/data`   | Folder holding the database     |
 | `BANNER` | unset | A thin yellow notice across the top of every page, such as `Experimental build 2026-11-18`. Plain text. Changing it needs only a restart |
 | `BASE_PATH` | unset | Serve the app under a path, such as `/draw`, instead of at the root. With Docker, set it as a build argument; see below |
-| `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`. Without it the backoffice does not exist |
+| `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`, and with it **Send feedback** in the editor. Without it neither exists |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so the visitor's address is read from `X-Forwarded-For` |
 | `ADDRESS_RETENTION_DAYS` | `90` | How long user-to-address links are kept |
 | `ADDRESS_SECRET` | generated | Key for hashing addresses. By default one is made up and stored in the database |
@@ -114,6 +114,7 @@ Setting `ADMIN_PASSWORD` switches on a backoffice at `<url>/admin`. Without it t
 - see every diagram, with who created and last changed it, its size, how many people have it open, and who has ever opened it (with view or edit access, when, and how often), and open any of them;
 - delete a diagram. This is permanent. Its links then say it was deleted, and anyone who has it open is told and keeps their copy on screen, but can no longer save it;
 - see the people the server knows about (see below), with how many addresses each was seen from and how many other people share one;
+- read what people sent through **Send feedback** (the speech-bubble button at the bottom right of the editor, or in its menu), delete it, and export all of it as JSON or text. Only the message and the time it was sent are stored, not who sent it or from which diagram. A message is at most 4000 characters; nothing limits how many are sent;
 - remove images that no diagram uses any more.
 
 The password is the only protection, and whoever has it can open and delete everything, so use a long one and serve the site over HTTPS. Five wrong passwords lock sign-in for five minutes. A session lasts twelve hours and is lost when the server restarts.

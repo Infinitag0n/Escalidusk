@@ -19,6 +19,7 @@ import {
   withCurrentAddresses,
   withCurrentNames,
 } from "./diagramLinks.js";
+import { FeedbackDialog, feedbackIcon, useFeedbackOffered } from "./Feedback.jsx";
 import { MovedTools, isMovedTool } from "./MovedTools.jsx";
 import { LiveSession } from "./live.js";
 import { appPath, appUrl, routeOf } from "./paths.js";
@@ -216,7 +217,7 @@ const TITLE_MIN_PX = 60;
  * measurement) and a ref callback for the element. The label on a read-only
  * page comes and goes with the name, so measuring follows the element itself.
  */
-function useTitleRoom(peerCount) {
+function useTitleRoom(layoutKey) {
   const [field, setField] = useState(null);
   const [room, setRoom] = useState(null);
   useLayoutEffect(() => {
@@ -229,6 +230,7 @@ function useTitleRoom(peerCount) {
       const edges = [
         ...document.querySelectorAll(
           ".excalidraw .App-toolbar, " +
+            ".excalidraw .toolbar-side, " +
             ".excalidraw .layer-ui__wrapper__top-right > *:not(.UserList__wrapper), " +
             ".excalidraw .layer-ui__wrapper__top-right .UserList > *",
         ),
@@ -253,8 +255,9 @@ function useTitleRoom(peerCount) {
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-    // Avatars come and go with the people present, without resizing anything observed.
-  }, [field, peerCount]);
+    // Avatars come and go with the people present, and "Connect" with the
+    // mode, without resizing anything observed.
+  }, [field, layoutKey]);
   return [room, setField];
 }
 
@@ -263,9 +266,9 @@ function useTitleRoom(peerCount) {
  * On a read-only page it is a label, not a text field. Hidden on the phone
  * layout, where the toolbar fills the top bar.
  */
-function TitleField({ value, readOnly, peerCount, onEdit, onFocusChange }) {
+function TitleField({ value, readOnly, layoutKey, onEdit, onFocusChange }) {
   const device = useDevice();
-  const [room, ref] = useTitleRoom(peerCount);
+  const [room, ref] = useTitleRoom(layoutKey);
   if (device.editor.isMobile) return null;
   const fit = room ? { visibility: "visible" } : { visibility: "hidden" };
   if (readOnly) {
@@ -331,15 +334,25 @@ function LaserButton({ active, onToggle }) {
 const TOOLBAR_ROW = ".excalidraw .App-menu_top .App-toolbar-container";
 
 /**
- * "Connect", just right of the toolbar and outside it. Excalidraw has no
+ * "Connect", just left of the toolbar and outside it. Excalidraw has no
  * place for a button there, so a holder of our own is added to the row the
- * toolbar sits in, and kept there as Excalidraw redraws it. The phone layout
- * has no such row; there the menu offers the same thing.
+ * toolbar sits in, and kept there as Excalidraw redraws it. The holder is
+ * positioned from CSS without taking up room, so the toolbar stays centred.
+ * The phone layout has no such row; there the menu offers the same thing.
  *
  * This leans on Excalidraw's class names; see UPGRADING-EXCALIDRAW.md.
+ *
+ * @param {object} props
+ * @param {() => void} props.onClick
+ * @param {(placed: boolean) => void} props.onPlaced told when the button
+ *   appears in or leaves the top bar, so the diagram name can make room
  */
-function ConnectButton({ onClick }) {
+function ConnectButton({ onClick, onPlaced }) {
   const [holder, setHolder] = useState(null);
+  useLayoutEffect(() => {
+    onPlaced(Boolean(holder));
+    return () => onPlaced(false);
+  }, [holder, onPlaced]);
 
   useEffect(() => {
     const root = document.querySelector(".excalidraw");
@@ -392,11 +405,11 @@ function ConnectButton({ onClick }) {
 }
 
 /**
- * Our own display name, as plain editable text in the bottom-right corner
- * just before the help button. Rendered through Excalidraw's footer, which
- * does not exist on the phone layout.
+ * Our own display name, as plain editable text in the bottom-right corner,
+ * and after it the feedback button, just before the help button. Rendered
+ * through Excalidraw's footer, which does not exist on the phone layout.
  */
-function UserNameField({ value, onEdit, onDone }) {
+function UserNameField({ value, onEdit, onDone, onFeedback }) {
   return (
     <Footer>
       {/* No type attribute, for the same reason as the diagram name. */}
@@ -415,6 +428,17 @@ function UserNameField({ value, onEdit, onDone }) {
           if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
         }}
       />
+      {onFeedback && (
+        <button
+          type="button"
+          className="feedback-button"
+          title="Send feedback"
+          aria-label="Send feedback"
+          onClick={onFeedback}
+        >
+          {feedbackIcon}
+        </button>
+      )}
     </Footer>
   );
 }
@@ -493,6 +517,8 @@ function OpenDiagram({ id, addressId, startViewing }) {
   const laserActive = activeTool === "laser";
   // How many other people have this diagram open right now.
   const [peerCount, setPeerCount] = useState(0);
+  const [connectPlaced, setConnectPlaced] = useState(false);
+  const feedbackOffered = useFeedbackOffered();
   const liveRef = useRef(null);
   const syncRef = useRef(null);
   const themeRef = useRef(null);
@@ -916,6 +942,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
           onClose={() => setPicker(null)}
         />
       )}
+      {picker === "feedback" && <FeedbackDialog dark={dark} onClose={() => setPicker(null)} />}
       {picker === "link" && (
         <DiagramPicker
           dark={dark}
@@ -989,7 +1016,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
         <TitleField
           value={title}
           readOnly={viewing}
-          peerCount={peerCount}
+          layoutKey={`${peerCount}:${connectPlaced}`}
           onEdit={onTitleEdit}
           onFocusChange={onTitleFocusChange}
         />
@@ -997,8 +1024,11 @@ function OpenDiagram({ id, addressId, startViewing }) {
           value={username}
           onEdit={onUsernameEdit}
           onDone={onUsernameDone}
+          onFeedback={feedbackOffered ? () => setPicker("feedback") : null}
         />
-        {canEdit && !deleted && !viewMode && <ConnectButton onClick={() => setPicker("link")} />}
+        {canEdit && !deleted && !viewMode && (
+          <ConnectButton onClick={() => setPicker("link")} onPlaced={setConnectPlaced} />
+        )}
         {api && !viewing && <MovedTools api={api} activeTool={activeTool} />}
         <MainMenu>
           <MainMenu.Item onSelect={() => window.open(appPath("/new"), "_blank")}>New diagram</MainMenu.Item>
@@ -1017,6 +1047,11 @@ function OpenDiagram({ id, addressId, startViewing }) {
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.SearchMenu />
           <MainMenu.DefaultItems.Help />
+          {feedbackOffered && (
+            <MainMenu.Item icon={feedbackIcon} onSelect={() => setPicker("feedback")}>
+              Send feedback…
+            </MainMenu.Item>
+          )}
           {!viewing && <MainMenu.DefaultItems.ClearCanvas />}
           <MainMenu.Separator />
           <MainMenu.DefaultItems.ToggleTheme />

@@ -367,6 +367,73 @@ function People({ onSignedOut }) {
   );
 }
 
+function Feedback({ onSignedOut }) {
+  const list = useList("/feedback", "feedback", onSignedOut);
+
+  const remove = async (entry) => {
+    if (!window.confirm("Delete this feedback? This cannot be undone.")) return;
+    try {
+      await call(`/feedback/${entry.id}`, { method: "DELETE" });
+      list.reload();
+    } catch (failure) {
+      if (failure instanceof SignedOut) return onSignedOut();
+      window.alert(`Could not delete: ${failure.message}`);
+    }
+  };
+
+  return (
+    <section>
+      <p className="hint">
+        What people sent through "Send feedback" in the editor. Only the words and the time are
+        kept, not who wrote them.
+      </p>
+      <p className="export">
+        Export all:{" "}
+        <a href={appPath("/api/admin/feedback/export?format=json")} download>
+          JSON
+        </a>{" "}
+        <a href={appPath("/api/admin/feedback/export?format=text")} download>
+          Text
+        </a>
+      </p>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Sent</th>
+              <th>Feedback</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {list.items.map((entry) => (
+              <tr key={entry.id}>
+                <td>
+                  <When time={entry.createdAt} />
+                </td>
+                <td className="message">{entry.message}</td>
+                <td className="actions">
+                  <button type="button" className="danger" onClick={() => remove(entry)}>
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {!list.loading && list.items.length === 0 && (
+              <tr>
+                <td colSpan={3} className="empty">
+                  No feedback yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <ListFooter list={list} noun="messages" />
+    </section>
+  );
+}
+
 function Overview({ stats, onSignedOut, onChanged }) {
   const [message, setMessage] = useState(null);
 
@@ -457,6 +524,7 @@ function Backoffice({ onSignedOut }) {
         {[
           ["diagrams", "Diagrams"],
           ["people", "People"],
+          ["feedback", "Feedback"],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -469,11 +537,9 @@ function Backoffice({ onSignedOut }) {
           </button>
         ))}
       </nav>
-      {tab === "diagrams" ? (
-        <Diagrams onSignedOut={onSignedOut} onChanged={loadStats} />
-      ) : (
-        <People onSignedOut={onSignedOut} />
-      )}
+      {tab === "diagrams" && <Diagrams onSignedOut={onSignedOut} onChanged={loadStats} />}
+      {tab === "people" && <People onSignedOut={onSignedOut} />}
+      {tab === "feedback" && <Feedback onSignedOut={onSignedOut} />}
     </main>
   );
 }
