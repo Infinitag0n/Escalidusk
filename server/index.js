@@ -269,7 +269,9 @@ if (existsSync(DIST_DIR)) {
     if (request.method !== "GET" || request.url.startsWith("/api/")) {
       return reply.code(404).send({ error: "not found" });
     }
-    const page = /^\/admin(\.html)?\/?(\?|$)/.test(request.url) ? "admin.html" : "index.html";
+    // Without a password there is no backoffice: /admin is an address like any other.
+    const admin = ADMIN_PASSWORD && /^\/admin(\.html)?\/?(\?|$)/.test(request.url);
+    const page = admin ? "admin.html" : "index.html";
     return reply
       .type("text/html; charset=utf-8")
       .header("Cache-Control", "no-cache")

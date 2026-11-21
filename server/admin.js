@@ -35,19 +35,22 @@ function paging(query) {
  * The backoffice API, under /api/admin: listing and deleting diagrams, seeing
  * who uses the server, and housekeeping.
  *
- * It is switched on by setting a password. Without one, only the "is it
- * enabled" question is answered and nothing else exists. With one, a correct
- * password buys a session cookie; every other route needs that cookie.
+ * It exists only when a password is set: without one, none of these routes
+ * are registered. With one, a correct password buys a session cookie; every
+ * other route needs that cookie.
  *
  * @param {import("fastify").FastifyInstance} app
  * @param {object} options
  * @param {ReturnType<import("./store.js").openStore>} options.store
  * @param {ReturnType<import("./live.js").createLiveRooms>} options.live
- * @param {string} options.password empty to leave the backoffice switched off
+ * @param {string} options.password empty for no backoffice at all
  * @param {string} [options.basePath] the path the app is served under, such as "/draw"
  */
 export function registerAdmin(app, { store, live, password, basePath = "" }) {
-  const enabled = password.length > 0;
+  if (!password) return;
+  if (password.length < 12) {
+    app.log.warn("ADMIN_PASSWORD is short. The backoffice can delete every diagram; use a long one.");
+  }
   const sessions = new Map(); // token -> expiry time
   let failures = []; // times of recent wrong passwords
 
@@ -77,14 +80,8 @@ export function registerAdmin(app, { store, live, password, basePath = "" }) {
       });
 
       admin.get("/session", { config: { open: true } }, async (request) => ({
-        enabled,
-        signedIn: enabled && signedIn(request),
+        signedIn: signedIn(request),
       }));
-
-      if (!enabled) return;
-      if (password.length < 12) {
-        app.log.warn("ADMIN_PASSWORD is short. The backoffice can delete every diagram; use a long one.");
-      }
 
       admin.post("/login", { config: { open: true } }, async (request, reply) => {
         const now = Date.now();

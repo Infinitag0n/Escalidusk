@@ -109,7 +109,7 @@ Good to know:
 
 ## Backoffice
 
-Setting `ADMIN_PASSWORD` switches on a backoffice at `<url>/admin`. After signing in with that password you can:
+Setting `ADMIN_PASSWORD` switches on a backoffice at `<url>/admin`. Without it there is no such page and no backoffice API: `/admin` behaves like any other address that is not a diagram. After signing in with that password you can:
 
 - see every diagram, with who created and last changed it, its size, how many people have it open, and who has ever opened it (with view or edit access, when, and how often), and open any of them;
 - delete a diagram. This is permanent. Its links then say it was deleted, and anyone who has it open is told and keeps their copy on screen, but can no longer save it;

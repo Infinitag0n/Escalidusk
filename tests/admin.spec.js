@@ -60,7 +60,6 @@ async function startServer(env) {
 test.describe("backoffice sign-in", () => {
   test("nothing but the session question is answered without signing in", async ({ request }) => {
     expect(await (await request.get("/api/admin/session")).json()).toEqual({
-      enabled: true,
       signedIn: false,
     });
     const { id } = await seedDiagram(request);
@@ -124,10 +123,7 @@ test.describe("backoffice sign-in", () => {
     const server = await startServer({ ADMIN_PASSWORD: "" });
     try {
       const get = (route, init) => fetch(`${server.url}${route}`, init);
-      expect(await (await get("/api/admin/session")).json()).toEqual({
-        enabled: false,
-        signedIn: false,
-      });
+      expect((await get("/api/admin/session")).status).toBe(404);
       expect((await get("/api/admin/diagrams")).status).toBe(404);
       const login = await get("/api/admin/login", {
         method: "POST",
@@ -137,8 +133,12 @@ test.describe("backoffice sign-in", () => {
       expect(login.status).toBe(404);
 
       const page = await browser.newPage();
-      await page.goto(`${server.url}/admin`);
-      await expect(page.getByText("The backoffice is switched off")).toBeVisible();
+      // /admin is an address like any other that is not a diagram.
+      for (const address of ["/admin", "/admin.html"]) {
+        await page.goto(`${server.url}${address}`);
+        await expect(page.getByRole("heading", { name: "No diagram here" })).toBeVisible();
+        await expect(page.getByLabel("Password")).toHaveCount(0);
+      }
       await page.close();
     } finally {
       server.stop();

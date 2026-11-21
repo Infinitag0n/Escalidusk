@@ -479,30 +479,22 @@ function Backoffice({ onSignedOut }) {
 }
 
 function App() {
-  // null while asking the server; then { enabled, signedIn }.
+  // null while asking the server; then { signedIn }.
   const [session, setSession] = useState(null);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState(null);
 
   useEffect(() => {
-    call("/session").then(setSession, () => setFailed(true));
+    call("/session").then(setSession, setFailure);
   }, []);
-  const onSignedOut = useCallback(() => setSession({ enabled: true, signedIn: false }), []);
+  const onSignedOut = useCallback(() => setSession({ signedIn: false }), []);
 
-  if (failed) return <p className="notice">Could not reach the server.</p>;
+  // A server without a backoffice never serves this page; only the development
+  // server does, and then the API answers 404.
+  if (failure?.status === 404) return <p className="notice">Page not found.</p>;
+  if (failure) return <p className="notice">Could not reach the server.</p>;
   if (!session) return <p className="notice">Loading…</p>;
-  if (!session.enabled) {
-    return (
-      <div className="notice">
-        <h1>The backoffice is switched off</h1>
-        <p>
-          Set the <code>ADMIN_PASSWORD</code> environment variable on the server and restart it to
-          switch it on.
-        </p>
-      </div>
-    );
-  }
   if (!session.signedIn) {
-    return <Login onSignedIn={() => setSession({ enabled: true, signedIn: true })} />;
+    return <Login onSignedIn={() => setSession({ signedIn: true })} />;
   }
   return <Backoffice onSignedOut={onSignedOut} />;
 }
