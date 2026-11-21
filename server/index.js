@@ -30,6 +30,9 @@ const ADDRESS_RETENTION_DAYS = Number(process.env.ADDRESS_RETENTION_DAYS ?? 90);
 const DAY_MS = 24 * 60 * 60 * 1000;
 // A thin notice across the top of every page, such as "Experimental build".
 const BANNER = bannerText(process.env.BANNER);
+// Log every request, for tracking something down. Off by default: on a
+// server left running it is nearly all of the log, and it fills the disk.
+const LOG_REQUESTS = process.env.LOG_REQUESTS === "true";
 // The backoffice at /admin exists only when this is set.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 
@@ -77,6 +80,8 @@ const app = Fastify({
   trustProxy: TRUST_PROXY,
   // Routes below are written as if the app were at the root.
   rewriteUrl: (request) => withoutBasePath(request.url, BASE_PATH),
+  // Starting, warnings and failures are logged either way.
+  disableRequestLogging: !LOG_REQUESTS,
   logger: {
     serializers: {
       // Addresses are only ever kept hashed, so keep them out of the log too.

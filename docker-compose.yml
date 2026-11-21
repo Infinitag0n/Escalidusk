@@ -18,6 +18,15 @@ services:
     volumes:
       - escalidusk-data:/data
     restart: unless-stopped
+    # Keep at most 50 MB of this container's output: five files of 10 MB,
+    # the oldest deleted as a new one starts. Without this it grows forever.
+    # Takes effect when the container is created anew (`up -d` does that
+    # after this file changes), not on a restart.
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
     # Only used by `docker compose watch`: rebuild and restart the container
     # whenever the source changes. Plain `docker compose up` ignores this.
     develop:

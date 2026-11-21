@@ -38,6 +38,7 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `BASE_PATH` | unset | Serve the app under a path, such as `/draw`, instead of at the root. With Docker, set it as a build argument; see below |
 | `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`. Without it the backoffice does not exist |
 | `MAX_DATABASE_SIZE` | unset | The most the database may grow to, such as `5GB` or `500MB`. Unset means no limit. See "Running out of room" below |
+| `LOG_REQUESTS` | `false` | Set to `true` to log every request. Otherwise only starting, warnings and failures are logged. See "Logs" below |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so the visitor's address is read from `X-Forwarded-For` |
 | `ADDRESS_RETENTION_DAYS` | `90` | How long user-to-address links are kept |
 | `ADDRESS_SECRET` | generated | Key for hashing addresses. By default one is made up and stored in the database |
@@ -131,6 +132,15 @@ Nothing expires by itself, so the database only grows. `MAX_DATABASE_SIZE` puts 
 - **To make room**, delete diagrams or remove unused images in the backoffice, or raise the limit and restart. What deleting frees is used again straight away. The database file itself does not get smaller, though: SQLite keeps freed space inside the file for reuse instead of handing it back to the disk.
 
 The limit covers the database's contents. Beside the database SQLite keeps a write-ahead file (`escalidusk.db-wal`) that comes on top: usually a few megabytes, briefly as much as the largest save. Leave room for that, and for logs and the system, when choosing the limit. Setting a limit below what the database already holds is safe: it is left as it is and cannot grow.
+
+## Logs
+
+The server writes its log to standard output, which Docker keeps in files on the host. Two things stop those from filling the disk on a server left running:
+
+- **Requests are not logged** unless `LOG_REQUESTS=true`. They are nearly all of the log otherwise (two lines for every save and every health check), and their addresses contain diagram ids. Starting, warnings and failed requests are always logged.
+- **Docker keeps at most 50 MB per container**: both Compose files set `max-size: 10m` and `max-file: 5`, so the log is kept in five files of 10 MB and the oldest is deleted as a new one starts. `docker compose logs` shows what is kept. The setting applies to a container when it is created, so after changing it run `docker compose up -d` (which recreates the container), not `restart`.
+
+Without Docker, send the output wherever suits and rotate it there.
 
 ## What is recorded about people
 

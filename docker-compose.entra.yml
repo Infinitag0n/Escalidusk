@@ -69,3 +69,9 @@ services:
       OAUTH2_PROXY_AUTH_LOGGING_FORMAT: "{{.RequestID}} [{{.Timestamp}}] [{{.Status}}] {{.Message}}"
       OAUTH2_PROXY_REQUEST_LOGGING_FORMAT: "{{.RequestID}} [{{.Timestamp}}] {{.RequestMethod}} {{.RequestURI}} {{.StatusCode}} {{.RequestDuration}}"
     restart: unless-stopped
+    # As for Escalidusk itself: at most 50 MB of output is kept.
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
