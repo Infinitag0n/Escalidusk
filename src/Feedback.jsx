@@ -77,7 +77,7 @@ export function FeedbackDialog({ dark, onClose }) {
         {sent ? (
           <>
             <p className="feedback__thanks" role="status">
-              Thank you. Your feedback was sent.
+              Thank you for your feedback.
             </p>
             <div className="feedback__actions">
               <button type="button" onClick={onClose}>

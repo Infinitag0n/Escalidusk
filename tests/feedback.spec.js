@@ -180,7 +180,7 @@ test.describe("sending feedback from the editor", () => {
     await expect(page.locator('[data-testid="toolbar-selection"]')).toBeChecked();
 
     await dialog.getByRole("button", { name: "Send" }).click();
-    await expect(dialog.getByRole("status")).toHaveText("Thank you. Your feedback was sent.");
+    await expect(dialog.getByRole("status")).toHaveText("Thank you for your feedback.");
     await dialog.getByRole("button", { name: "Close" }).last().click();
     await expect(dialog).toHaveCount(0);
 
@@ -256,7 +256,7 @@ test("a server without a backoffice still takes feedback, to be read once it has
     const dialog = page.getByRole("dialog", { name: "Send feedback" });
     await dialog.getByLabel("Your feedback").fill(message);
     await dialog.getByRole("button", { name: "Send" }).click();
-    await expect(dialog.getByRole("status")).toHaveText("Thank you. Your feedback was sent.");
+    await expect(dialog.getByRole("status")).toHaveText("Thank you for your feedback.");
     await page.close();
     // Nobody can read it yet.
     expect((await fetch(`${server.url}/api/admin/feedback`)).status).toBe(404);
