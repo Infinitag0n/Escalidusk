@@ -519,7 +519,7 @@ function Overview({ stats, onSignedOut, onChanged }) {
           <dd>{stats.deletedDiagrams}</dd>
         </div>
         <div>
-          <dt>Database file</dt>
+          <dt>Database size</dt>
           <dd>{formatSize(stats.databaseSize)}</dd>
         </div>
       </dl>

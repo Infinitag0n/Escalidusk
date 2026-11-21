@@ -276,6 +276,15 @@ export function openStore(dataDir) {
   );
   const deleteFeedback = db.prepare("DELETE FROM feedback WHERE id = ?");
 
+  // SQLite writes changes to a file beside the database first (the "-wal"
+  // file) and only moves them into the database file every so often, so
+  // recent changes, a new image say, are in that file. Count both.
+  const sizeOnDisk = () =>
+    [dbPath, `${dbPath}-wal`].reduce(
+      (total, file) => total + (statSync(file, { throwIfNoEntry: false })?.size ?? 0),
+      0,
+    );
+
   // user id -> { publicId, name, addresses: Map(address hash -> time last written) }
   const recentlySeen = new Map();
 
@@ -411,7 +420,7 @@ export function openStore(dataDir) {
         ...selectTotals.get(),
         orphanedImages: orphaned.count,
         orphanedImageSize: orphaned.size,
-        databaseSize: statSync(dbPath).size,
+        databaseSize: sizeOnDisk(),
       };
     },
 

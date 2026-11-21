@@ -337,6 +337,18 @@ test.describe("backoffice data", () => {
     other.socket.close();
   });
 
+  test("the database size grows as soon as an image is stored", () => {
+    const store = openStore(mkdtempSync(path.join(tmpdir(), "escalidusk-size-")));
+    try {
+      const before = store.stats().databaseSize;
+      // SQLite keeps recent changes in a file beside the database; that counts too.
+      store.putFile(newId(), "big", "image/png", Buffer.alloc(300_000, 1));
+      expect(store.stats().databaseSize - before).toBeGreaterThanOrEqual(300_000);
+    } finally {
+      store.close();
+    }
+  });
+
   test("pages through long lists", async ({ request }) => {
     for (let i = 0; i < 3; i++) await seedDiagram(request);
     await signIn(request);
@@ -484,7 +496,7 @@ test.describe("backoffice page", () => {
 
     await page.getByLabel("Password").fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByText("Database file")).toBeVisible();
+    await expect(page.getByText("Database size")).toBeVisible();
 
     await page.getByLabel("Search diagrams").fill(name);
     const row = page.getByRole("row", { name: new RegExp(name) });
