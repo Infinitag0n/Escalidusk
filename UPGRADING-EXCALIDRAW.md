@@ -27,6 +27,7 @@ These exist only because of how 0.18.1 behaves. A newer version may make them un
 | The hexagon link is a closed `line` grouped with a `text` | `src/diagramLinks.js` | Excalidraw has no custom element types | See "The hexagon" below | `diagram-links.spec.js` |
 | The diagram name is an `<input>` with no `type` attribute | `TitleField` in `src/Editor.jsx` | Excalidraw styles every `input[type=text]` with a border and background | The name still looks like plain text | `title.spec.js` |
 | The Library button shows only its icon | `.default-sidebar-trigger.sidebar-trigger .sidebar-trigger__label` in `src/styles.css` | To save room in the top bar. The selector is that specific to out-rank Excalidraw's own rule | Button is still icon-only and still opens the library | `topbar.spec.js` |
+| The help dialog has no links to Excalidraw's documentation, blog, YouTube and issue tracker | `.HelpDialog .HelpDialog__header` in `src/styles.css` | They lead to Excalidraw's own sites, which are not about this service. Excalidraw has no setting for it | The help dialog shows the shortcuts and none of those links | `topbar.spec.js` |
 | `process.env.IS_PREACT` is defined at build time | `vite.config.js` | Without it the browser build fails with "process is not defined" | Remove it and see whether the build and the app still work | **by hand** |
 
 ## Class names, test ids and DOM structure we rely on
@@ -43,6 +44,7 @@ If any of these is renamed, the feature next to it stops working, usually silent
 | `.excalidraw .Modal` | Knowing an Excalidraw dialog is open | space-bar effect in `src/Editor.jsx` |
 | `.UserList .is-current-user` | Hiding our own avatar during a laser stroke | `src/styles.css` |
 | `.sidebar-trigger__label` | Icon-only Library button | `src/styles.css` |
+| `.HelpDialog`, `.HelpDialog__header` | Hiding the help dialog's links to Excalidraw's sites | `src/styles.css` |
 
 The diagram name is positioned with fixed offsets (`top: 1rem; left: 3.75rem` in `src/styles.css`) that assume the menu button's size and the editor's padding. If the top-left corner changes, the name will overlap or drift. Covered by `title.spec.js`.
 

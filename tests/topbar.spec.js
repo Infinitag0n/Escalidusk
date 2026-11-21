@@ -166,6 +166,19 @@ test("the Library button shows only its icon and still opens the library", async
   await expect(page.locator(".sidebar")).toBeVisible();
 });
 
+test("the help dialog lists the shortcuts, without links to Excalidraw's sites", async ({ page }) => {
+  await openDiagram(page);
+  await page.mouse.click(600, 500); // give the canvas the keyboard
+  await page.keyboard.press("?");
+  const help = page.locator(".HelpDialog");
+  await expect(help.getByText("Keyboard shortcuts")).toBeVisible();
+  await expect(help.locator(".HelpDialog__header")).toBeHidden();
+  for (const name of ["Documentation", "Read our blog", "Found an issue? Submit", "YouTube"]) {
+    await expect(help.getByRole("link", { name })).toHaveCount(0);
+  }
+  await expect(help.getByRole("link")).toHaveCount(0);
+});
+
 test.describe("phone layout", () => {
   test.use({ viewport: { width: 390, height: 800 } });
 

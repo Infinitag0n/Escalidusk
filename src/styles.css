@@ -126,6 +126,12 @@ body,
   display: none;
 }
 
+/* Help dialog: no links out to Excalidraw's documentation, blog, YouTube and issue tracker.
+   The selector is that specific to out-rank Excalidraw's own rule. */
+.excalidraw .HelpDialog .HelpDialog__header {
+  display: none;
+}
+
 .excalidraw .menu-item--disabled {
   opacity: 0.45;
   cursor: not-allowed;
