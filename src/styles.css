@@ -529,6 +529,13 @@ body,
   font-size: 0.9375rem;
 }
 
+/* While viewing, a link to another diagram is clicked to open it, and the
+   pointer says so. Excalidraw sets the cursor on the canvas itself, hence
+   !important. */
+.editor[data-over-link] .excalidraw canvas {
+  cursor: pointer !important;
+}
+
 /* "Connect" sits just left of the toolbar, outside it (see ConnectButton).
    It hangs off the toolbar's row without taking up room in it, so the
    toolbar stays centred. */

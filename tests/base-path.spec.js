@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { UUID_RE, drawRectangle, expectStatus, rectangle } from "./helpers.js";
+import { UUID_RE, drawRectangle, expectStatus, followLink, rectangle } from "./helpers.js";
 
 // The app served under /draw, as behind a proxy that forwards only that path.
 // It needs its own build (the prefix is baked into the pages) and its own server.
@@ -110,16 +110,6 @@ test("links to other diagrams and the backoffice point under the path", async ({
   await page.close();
 });
 
-/** Follows the link on the hexagon in the middle of the screen, through its link icon. */
-async function followLink(page, hexagon) {
-  const { width, height } = page.viewportSize();
-  await page.mouse.click(width / 2, height - 120); // empty canvas: deselect
-  const icon = { x: width / 2 + hexagon.width / 2 + 7, y: height / 2 - hexagon.height / 2 - 9 };
-  await page.mouse.move(icon.x - 30, icon.y + 30);
-  await page.mouse.move(icon.x, icon.y, { steps: 4 });
-  await page.mouse.click(icon.x, icon.y);
-}
-
 const get = async (id) => (await fetch(`${server.url}/api/diagrams/${id}`)).json();
 
 test("links between diagrams made before the path changed still open", async ({ browser }) => {
@@ -140,11 +130,12 @@ test("links between diagrams made before the path changed still open", async ({ 
   await expect.poll(async () => (await get(source)).scene.elements.length).toBe(2);
   await expectStatus(page, "saved");
 
-  // Make it look as if the hexagon was drawn while the app was at the root.
+  // Make it look as if the hexagon was drawn while the app was at the root,
+  // back when hexagons also carried a plain link to the address of the day.
   const before = await get(source);
   const hexagon = before.scene.elements.find((element) => element.type === "line");
   const { viewId } = await get(target);
-  expect(hexagon.link).toBe(`${BASE}/${viewId}`);
+  expect(hexagon.link).toBeNull();
   const elements = before.scene.elements.map((element) =>
     element === hexagon ? { ...element, link: `/${viewId}`, version: element.version + 1 } : element,
   );
@@ -157,12 +148,9 @@ test("links between diagrams made before the path changed still open", async ({ 
 
   await page.goto(`${server.url}/${source}`);
   await page.waitForSelector(".excalidraw canvas");
-  // Opening it for editing moves the stored address to the current path.
-  const storedLink = async () =>
-    (await get(source)).scene.elements.find((element) => element.id === hexagon.id).link;
-  await expect.poll(storedLink, { timeout: 15_000 }).toBe(`${BASE}/${viewId}`);
   await expectStatus(page, "saved");
-  await followLink(page, hexagon);
+  // The old address is not used for anything: the hexagon opens by the ids it carries.
+  await followLink(page);
   await page.waitForURL(`**${BASE}/${target}`);
   await expect(title).toHaveValue("Old target");
   await page.close();

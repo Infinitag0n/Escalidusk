@@ -3,6 +3,7 @@ import {
   connectLive,
   expectStatus,
   expectStoredCount,
+  followLink,
   liveElements,
   newId,
   openDiagram,
@@ -44,16 +45,6 @@ const parts = (diagram) => {
   };
 };
 
-/** Follows the link on the hexagon in the middle of the screen, through its link icon. */
-async function followLink(page, hexagon) {
-  const { width, height } = page.viewportSize();
-  await page.mouse.click(width / 2, height - 120); // empty canvas: deselect
-  const icon = { x: width / 2 + hexagon.width / 2 + 7, y: height / 2 - hexagon.height / 2 - 9 };
-  await page.mouse.move(icon.x - 30, icon.y + 30);
-  await page.mouse.move(icon.x, icon.y, { steps: 4 });
-  await page.mouse.click(icon.x, icon.y);
-}
-
 test("linking to a diagram adds a hexagon carrying its name and ids", async ({
   page,
   request,
@@ -82,7 +73,8 @@ test("linking to a diagram adds a hexagon carrying its name and ids", async ({
 
   // Its plain link is the read-only one. By default it also carries the
   // editing id, for the people who can edit this diagram.
-  expect(hexagon.link).toBe(`/${target.viewId}`);
+  // The shape itself is the link: it has no Excalidraw link, and so no link icon.
+  expect(hexagon.link).toBeNull();
   expect(hexagon.customData).toEqual({
     escalidusk: { diagramLink: { view: target.viewId, edit: target.id } },
   });

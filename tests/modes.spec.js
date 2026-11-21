@@ -201,11 +201,10 @@ test.describe("moving between diagrams keeps the current mode", () => {
 
     await page.keyboard.press("Space");
     await expect.poll(() => pathOf(page)).toBe(source.viewId);
+    // While viewing, a click on the hexagon itself opens it.
+    expect(hexagon.link).toBeNull();
     const { width, height } = page.viewportSize();
-    const icon = { x: width / 2 + hexagon.width / 2 + 7, y: height / 2 - hexagon.height / 2 - 9 };
-    await page.mouse.move(icon.x - 30, icon.y + 30);
-    await page.mouse.move(icon.x, icon.y, { steps: 4 });
-    await page.mouse.click(icon.x, icon.y);
+    await page.mouse.click(width / 2, height / 2);
 
     await page.waitForURL(`**/${target.viewId}`);
     await expect(page.locator(".diagram-title--readonly")).toHaveText("Target");

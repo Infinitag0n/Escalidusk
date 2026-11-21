@@ -1,5 +1,7 @@
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
-import { appPath } from "./paths.js";
+import { linkTargetOfElement } from "./linkHit.js";
+
+export { linkTargetOfElement };
 
 // A link to another diagram is drawn as a hexagon with the diagram's name in
 // it. Excalidraw has no way to add new kinds of shape, so the hexagon is one
@@ -8,6 +10,10 @@ import { appPath } from "./paths.js";
 // to by its read-only id. The hexagon's marker may also carry the editing id,
 // so that people who can edit this diagram can edit the linked one too; the
 // server removes it from anything it sends to a read-only reader.
+//
+// The hexagon is opened by clicking it (see Editor.jsx), going by that
+// marker. It deliberately has no Excalidraw `link` of its own: that would
+// put Excalidraw's link icon beside it, and the shape itself is the link.
 
 const FILL = "#d0bfff";
 const MIN_WIDTH = 220;
@@ -17,13 +23,6 @@ const FONT_SIZE = 20;
 const UNTITLED = "Untitled";
 
 const labelFor = (name) => name.trim() || UNTITLED;
-
-/**
- * The address a hexagon's plain link holds: the read-only page under the
- * app's current path. Stored links can predate a change of BASE_PATH; see
- * withCurrentAddresses.
- */
-const addressOf = (view) => appPath(`/${view}`);
 
 /** An element with some fields changed, as a new version so the change is saved and reaches collaborators. */
 const changed = (element, fields) => ({
@@ -83,8 +82,6 @@ export function createDiagramLink({ view, edit, name, centre }) {
       backgroundColor: FILL,
       fillStyle: "solid",
       groupIds: [groupId],
-      // The plain link is always the read-only one; it is what any Excalidraw shows.
-      link: addressOf(view),
       customData: { escalidusk: { diagramLink: { view, ...(edit ? { edit } : {}) } } },
     },
     {
@@ -98,16 +95,6 @@ export function createDiagramLink({ view, edit, name, centre }) {
     },
   ]);
   return { elements, groupId };
-}
-
-/**
- * The diagram a link element points to, as `{ view, edit? }`, or null for
- * any other element.
- */
-export function linkTargetOfElement(element) {
-  const marker = element.customData?.escalidusk?.diagramLink;
-  if (typeof marker === "string") return { view: marker }; // links made before editing ids could be carried
-  return typeof marker?.view === "string" ? { view: marker.view, edit: marker.edit } : null;
 }
 
 /** The read-only ids of every diagram the scene links to. */
@@ -151,19 +138,20 @@ export function withCurrentNames(elements, summaries) {
 }
 
 /**
- * Points hexagons made under another BASE_PATH at the current one. Following
- * a hexagon goes by the ids it carries, so it works either way; this fixes the
- * address Excalidraw shows and exports.
+ * Takes Excalidraw's own `link` off hexagons that have one: those made
+ * before the shape itself became the link. With it they would still show
+ * Excalidraw's link icon. The elements are otherwise left exactly as they
+ * are, version included: this changes how they are shown here, and what is
+ * stored catches up the next time the hexagon is saved for another reason.
  * @param {readonly object[]} elements the whole scene
- * @returns {object[] | null} the scene with the links fixed, or null if none needed it
+ * @returns {object[] | null} the scene without those links, or null if there were none
  */
-export function withCurrentAddresses(elements) {
-  let moved = false;
+export function withoutPlainLinks(elements) {
+  let found = false;
   const next = elements.map((element) => {
-    const target = element.isDeleted ? null : linkTargetOfElement(element);
-    if (!target || element.link === addressOf(target.view)) return element;
-    moved = true;
-    return changed(element, { link: addressOf(target.view) });
+    if (!element.link || !linkTargetOfElement(element)) return element;
+    found = true;
+    return { ...element, link: null };
   });
-  return moved ? next : null;
+  return found ? next : null;
 }

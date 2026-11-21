@@ -175,3 +175,72 @@ export function liveCloseCode(baseURL, id, first) {
     socket.addEventListener("error", () => {});
   });
 }
+
+/**
+ * Opens the link to another diagram (a hexagon) in the middle of the screen,
+ * the way a person does: one click while viewing, a double-click while editing.
+ */
+export async function followLink(page) {
+  const { width, height } = page.viewportSize();
+  const editing = await page.locator(".App-toolbar").isVisible();
+  if (editing) await page.mouse.dblclick(width / 2, height / 2);
+  else await page.mouse.click(width / 2, height / 2);
+}
+
+/**
+ * A link to another diagram as it is stored: a filled, closed, six-sided
+ * line carrying the target's ids, and its label. Centred on a point.
+ */
+export function hexagonLink({ view, edit, name = "Linked", x = 400, y = 400, link = null } = {}) {
+  const [width, height] = [220, 110];
+  const group = `group-${view}`;
+  return [
+    rectangle({
+      id: `hexagon-${view.slice(0, 8)}`,
+      type: "line",
+      x: x - width / 2,
+      y,
+      width,
+      height,
+      points: [
+        [0, 0],
+        [width / 4, -height / 2],
+        [(3 * width) / 4, -height / 2],
+        [width, 0],
+        [(3 * width) / 4, height / 2],
+        [width / 4, height / 2],
+        [0, 0],
+      ],
+      backgroundColor: "#d0bfff",
+      groupIds: [group],
+      lastCommittedPoint: null,
+      startBinding: null,
+      endBinding: null,
+      startArrowhead: null,
+      endArrowhead: null,
+      link,
+      customData: { escalidusk: { diagramLink: { view, ...(edit ? { edit } : {}) } } },
+    }),
+    rectangle({
+      id: `label-${view.slice(0, 8)}`,
+      type: "text",
+      x: x - 40,
+      y: y - 12,
+      width: 80,
+      height: 25,
+      backgroundColor: "transparent",
+      text: name,
+      originalText: name,
+      fontSize: 20,
+      fontFamily: 5,
+      textAlign: "left",
+      verticalAlign: "top",
+      containerId: null,
+      autoResize: true,
+      lineHeight: 1.25,
+      index: "a1",
+      groupIds: [group],
+      customData: { escalidusk: { diagramLinkLabel: view } },
+    }),
+  ];
+}

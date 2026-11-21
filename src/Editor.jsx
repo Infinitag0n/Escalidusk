@@ -16,9 +16,10 @@ import {
   createDiagramLink,
   linkTargetOfElement,
   linkedDiagramIds,
-  withCurrentAddresses,
   withCurrentNames,
+  withoutPlainLinks,
 } from "./diagramLinks.js";
+import { diagramLinkAt, onlyLinkSelected } from "./linkHit.js";
 import { FeedbackDialog, feedbackIcon } from "./Feedback.jsx";
 import { MovedTools, isMovedTool } from "./MovedTools.jsx";
 import { LiveSession } from "./live.js";
@@ -102,7 +103,8 @@ async function loadDiagram(id) {
     savedKey: sceneKey(elements, settings),
     savedSettings: settings,
     initialData: {
-      elements,
+      // Hexagons from before the shape itself was the link; see withoutPlainLinks.
+      elements: withoutPlainLinks(elements) ?? elements,
       files,
       appState: { ...settings, theme: readLocal(THEME_KEY, "light") },
       scrollToContent: true,
@@ -213,6 +215,8 @@ function CopyLinkButton({ label, link, title, primary = false }) {
   );
 }
 
+// How far the pointer may travel between press and release and still count as a click.
+const LINK_CLICK_SLOP_PX = 5;
 const TITLE_GAP_PX = 12;
 const TITLE_MIN_PX = 60;
 
@@ -637,13 +641,14 @@ function OpenDiagram({ id, addressId, startViewing }) {
 
   // Labels of links to other diagrams follow those diagrams' names. Checked
   // shortly after opening, and again whenever the window regains focus.
-  // Their addresses follow the app's path, in case it moved since they were made.
+  // The same moments catch a hexagon that arrived with a plain link on it,
+  // from someone whose page predates the shape itself being the link.
   useEffect(() => {
     if (!api || !loaded) return undefined;
     let cancelled = false;
     const refresh = async () => {
-      const moved = withCurrentAddresses(api.getSceneElementsIncludingDeleted());
-      if (moved) api.updateScene({ elements: moved, captureUpdate: CaptureUpdateAction.NEVER });
+      const plain = withoutPlainLinks(api.getSceneElementsIncludingDeleted());
+      if (plain) api.updateScene({ elements: plain, captureUpdate: CaptureUpdateAction.NEVER });
       const ids = linkedDiagramIds(api.getSceneElementsIncludingDeleted());
       if (ids.length === 0) return;
       try {
@@ -820,12 +825,76 @@ function OpenDiagram({ id, addressId, startViewing }) {
     setTimeout(focusCanvas);
   };
 
+  // --- A link to another diagram is opened by clicking its hexagon ---
+  //
+  // While viewing, one click opens it. While editing, a click has to select
+  // (the hexagon is moved, restyled and deleted like any shape), so there it
+  // takes a double-click. Excalidraw knows nothing of this: what was clicked
+  // is worked out from the hexagon's outline (see linkHit.js).
+
+  /** The link under the pointer, if any. */
+  const linkUnder = (event) =>
+    api
+      ? diagramLinkAt(api.getSceneElements(), viewportCoordsToSceneCoords(event, api.getAppState()))
+      : null;
+
+  const openLink = (link, event) =>
+    goToDiagram(link.target, { newTab: event.ctrlKey || event.metaKey });
+
+  // While viewing: a press and release in the same spot, on a hexagon. A
+  // drag is panning (or the laser), and must not open anything.
+  const watchForLinkClick = (down) => {
+    if (!linkUnder(down)) return;
+    const end = (up) => {
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      if (up.type !== "pointerup") return;
+      const moved = Math.hypot(up.clientX - down.clientX, up.clientY - down.clientY);
+      if (moved > LINK_CLICK_SLOP_PX) return;
+      const link = linkUnder(up);
+      if (link) openLink(link, up);
+    };
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  };
+
+  // While viewing, the pointer shows that a hexagon can be clicked. Set on
+  // the element directly: this runs on every move, far too often to re-render.
+  const onPointerMoveCapture = (event) => {
+    const editor = event.currentTarget;
+    const over = viewing && !laserActive && event.target.tagName === "CANVAS" && Boolean(linkUnder(event));
+    if (over !== editor.hasAttribute("data-over-link")) editor.toggleAttribute("data-over-link", over);
+  };
+
+  // While editing: a double-click on a hexagon opens it. Left to itself,
+  // Excalidraw would step into the hexagon's group and start editing its
+  // label (which only follows the linked diagram's name) or the outline's
+  // points. This runs first and keeps the double-click from reaching it.
+  //
+  // Only when the hexagon is what is selected, though. The two clicks have
+  // already selected whatever was hit, so if the selection is anything else
+  // (another shape lying on top, or a group someone put the hexagon in),
+  // the double-click is Excalidraw's as usual: stepping into that group
+  // selects the hexagon, and a second double-click then opens it.
+  const onDoubleClickCapture = (event) => {
+    if (viewing || !api || event.target.tagName !== "CANVAS") return;
+    if (activeTool !== "selection") return;
+    const link = linkUnder(event);
+    if (!link) return;
+    const { selectedElementIds } = api.getAppState();
+    if (!onlyLinkSelected(api.getSceneElements(), selectedElementIds, link.element)) return;
+    event.stopPropagation();
+    event.preventDefault();
+    openLink(link, event);
+  };
+
   // In view mode Excalidraw turns every drag into panning, laser or
   // not. So while the laser is on, a drag that starts on the canvas is taken
   // over here, before Excalidraw sees it, and drawn through the live session.
   const onPointerDownCapture = (event) => {
-    if (!viewing || !laserActive || !api || !liveRef.current) return;
     if (event.button !== 0 || !event.isPrimary || event.target.tagName !== "CANVAS") return;
+    if (viewing && !laserActive) watchForLinkClick(event.nativeEvent);
+    if (!viewing || !laserActive || !api || !liveRef.current) return;
     event.stopPropagation();
     event.preventDefault();
     focusCanvas(); // Excalidraw would have done this itself on a click it handled
@@ -921,6 +990,8 @@ function OpenDiagram({ id, addressId, startViewing }) {
     <div
       className={`editor${isMovedTool(activeTool) ? " editor--moved-tool-active" : ""}`}
       onPointerDownCapture={onPointerDownCapture}
+      onPointerMoveCapture={onPointerMoveCapture}
+      onDoubleClickCapture={onDoubleClickCapture}
       onKeyDown={onKeyDown}
     >
       {status === "signedout" && !deleted && (
