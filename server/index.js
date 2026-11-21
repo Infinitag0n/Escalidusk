@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,9 +9,11 @@ import { createAddressHasher } from "./address.js";
 import { registerAdmin } from "./admin.js";
 import { bannerText, withBanner } from "./banner.js";
 import { normaliseBasePath, withoutBasePath } from "./basePath.js";
+import { createHealth } from "./health.js";
 import { sceneWithoutEditLinks } from "./links.js";
 import { DIAGRAM_DELETED, createLiveRooms } from "./live.js";
-import { openStore } from "./store.js";
+import { parseSize } from "./quota.js";
+import { isStorageFull, openStore } from "./store.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -51,8 +54,19 @@ const IMAGE_TYPES = new Set([
   "image/jfif",
 ]);
 
-const store = openStore(DATA_DIR);
+// How large the database may grow, such as 5GB. Unset for no limit.
+let MAX_DATABASE_SIZE;
+try {
+  MAX_DATABASE_SIZE = parseSize(process.env.MAX_DATABASE_SIZE);
+} catch (error) {
+  // A limit that was meant but mistyped must not quietly become "no limit".
+  console.error(error.message);
+  process.exit(1);
+}
+
+const store = openStore(DATA_DIR, { maxBytes: MAX_DATABASE_SIZE });
 const live = createLiveRooms();
+const health = createHealth({ connections: live.connections, messages: live.messages });
 const hashAddress = createAddressHasher(process.env.ADDRESS_SECRET || store.addressSecret());
 
 store.pruneAddresses(ADDRESS_RETENTION_DAYS);
@@ -102,10 +116,41 @@ function userIdOf(request) {
 }
 
 const DELETED = { error: "deleted" };
+const STORAGE_FULL = { error: "storage full" };
+
+/**
+ * Runs a note-taking write (who was seen, who opened what). On a database
+ * that has reached its size limit these fail; that must not stop the request
+ * or the connection they belong to, which may well be only reading.
+ */
+function noting(write, otherwise) {
+  try {
+    return write();
+  } catch (error) {
+    if (!isStorageFull(error)) throw error;
+    return otherwise;
+  }
+}
+
+// A write that the database had no room for: say so, rather than "server error".
+app.setErrorHandler((error, request, reply) => {
+  if (isStorageFull(error)) {
+    request.log.warn("the database has reached MAX_DATABASE_SIZE; a write was refused");
+    return reply.code(507).send(STORAGE_FULL);
+  }
+  return reply.send(error);
+});
+
+app.addHook("onResponse", async (request, reply) => {
+  if (reply.statusCode >= 500 && reply.statusCode !== 507) health.recordServerError();
+  if (request.method === "PUT" && request.routeOptions.url === "/api/diagrams/:id") {
+    health.recordSave(reply.elapsedTime);
+  }
+});
 
 app.get("/api/health", async () => ({ ok: true }));
 
-registerAdmin(app, { store, live, password: ADMIN_PASSWORD, basePath: BASE_PATH });
+registerAdmin(app, { store, live, health, password: ADMIN_PASSWORD, basePath: BASE_PATH });
 
 // Only the words are kept (and the time): not who sent them, nor from where.
 // Feedback is taken whether or not there is a backoffice to read it in: it
@@ -155,10 +200,14 @@ app.put("/api/diagrams/:id", async (request, reply) => {
     return reply.code(400).send({ error: "expected { baseVersion, elements, appState? }" });
   }
   const key = typeof body.key === "string" && body.key.length <= 512 ? body.key : null;
+  // Nearly full: what room is left is for diagrams that already exist.
+  if (body.baseVersion === 0 && store.storage().nearlyFull) {
+    return reply.code(507).send(STORAGE_FULL);
+  }
 
   const sceneJson = JSON.stringify({ elements: body.elements, appState: body.appState ?? {} });
   const userId = userIdOf(request);
-  if (userId) store.seeUser({ id: userId, addressHash: hashAddress(request.ip) });
+  if (userId) noting(() => store.seeUser({ id: userId, addressHash: hashAddress(request.ip) }));
   const result = store.saveDiagram(id, body.baseVersion, sceneJson, userId);
   if (result.ok) {
     // Let everyone else who has this diagram open know it was saved.
@@ -207,9 +256,13 @@ app.get("/api/diagrams/:id/live", { websocket: true }, (socket, request) => {
   const addressHash = hashAddress(request.ip);
   live.join(found?.row.id ?? id, socket, {
     readOnly: found?.readOnly ?? false,
-    identify: ({ user, name }) => store.seeUser({ id: user, name, addressHash }).publicId,
+    // Someone who cannot be noted down still gets an id for the others to know them by.
+    identify: ({ user, name }) =>
+      noting(() => store.seeUser({ id: user, name, addressHash }), { publicId: randomUUID() }).publicId,
     // Visits are recorded for saved diagrams only; a new one has nothing to visit yet.
-    joined: found ? (user) => store.recordVisit(found.row.id, user, !found.readOnly) : undefined,
+    joined: found
+      ? (user) => noting(() => store.recordVisit(found.row.id, user, !found.readOnly))
+      : undefined,
   });
 });
 
@@ -250,6 +303,10 @@ app.put("/api/diagrams/:id/files/:fileId", async (request, reply) => {
   }
   if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
     return reply.code(400).send({ error: "empty body" });
+  }
+  // Nearly full: no new images. One that is already stored is not new.
+  if (store.storage().nearlyFull && !store.getFile(id, fileId)) {
+    return reply.code(507).send(STORAGE_FULL);
   }
 
   store.putFile(id, fileId, mimeType, request.body);
@@ -316,6 +373,7 @@ function warnIfBuiltForAnotherBasePath() {
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {
     live.close();
+    health.close();
     await app.close();
     store.close();
     process.exit(0);

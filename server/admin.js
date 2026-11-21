@@ -43,10 +43,11 @@ function paging(query) {
  * @param {object} options
  * @param {ReturnType<import("./store.js").openStore>} options.store
  * @param {ReturnType<import("./live.js").createLiveRooms>} options.live
+ * @param {ReturnType<import("./health.js").createHealth>} options.health
  * @param {string} options.password empty for no backoffice at all
  * @param {string} [options.basePath] the path the app is served under, such as "/draw"
  */
-export function registerAdmin(app, { store, live, password, basePath = "" }) {
+export function registerAdmin(app, { store, live, health, password, basePath = "" }) {
   if (!password) return;
   if (password.length < 12) {
     app.log.warn("ADMIN_PASSWORD is short. The backoffice can delete every diagram; use a long one.");
@@ -112,6 +113,8 @@ export function registerAdmin(app, { store, live, password, basePath = "" }) {
       });
 
       admin.get("/stats", async () => store.stats());
+
+      admin.get("/health", async () => health.report());
 
       admin.get("/diagrams", async (request) => {
         const result = store.listDiagrams(paging(request.query));

@@ -349,6 +349,40 @@ test.describe("backoffice data", () => {
     }
   });
 
+  test("reports how the server is doing, from its own memory", async ({ request, baseURL }) => {
+    expect((await request.get("/api/admin/health")).status()).toBe(401);
+    const { id } = await seedDiagram(request);
+    const live = await connectLive(baseURL, id);
+    live.send({ t: "pointer", x: 1, y: 2 });
+    await signIn(request);
+
+    const health = await (await request.get("/api/admin/health")).json();
+    expect(health.startedAt).toBeLessThanOrEqual(Date.now());
+    expect(health.startedAt).toBeGreaterThan(Date.now() - 10 * 60 * 1000);
+    expect(health.uptimeSeconds).toBeGreaterThanOrEqual(0);
+    expect(health.uptimeSeconds).toBeLessThan(600);
+    expect(health.memoryBytes).toBeGreaterThan(10 * 1024 * 1024);
+    expect(health.eventLoopDelay.typicalMs).toBeGreaterThanOrEqual(0);
+    expect(health.eventLoopDelay.worstMs).toBeGreaterThanOrEqual(health.eventLoopDelay.typicalMs);
+    // Well under a second, on a server doing next to nothing.
+    expect(health.eventLoopDelay.typicalMs).toBeLessThan(1000);
+    expect(health.connections).toBeGreaterThanOrEqual(1);
+    // The diagram seeded above was a save.
+    expect(health.saves.count).toBeGreaterThanOrEqual(1);
+    expect(health.saves.count).toBeLessThanOrEqual(500);
+    expect(health.saves.typicalMs).toBeGreaterThan(0);
+    expect(health.saves.slowMs).toBeGreaterThanOrEqual(health.saves.typicalMs);
+    expect(Number.isInteger(health.serverErrors)).toBe(true);
+    expect(Number.isInteger(health.messagesLastMinute)).toBe(true);
+    live.socket.close();
+
+    // Without a size limit, the storage figures say so.
+    const stats = await (await request.get("/api/admin/stats")).json();
+    expect(stats.storage).toMatchObject({ limit: null, nearlyFull: false });
+    expect(stats.storage.used).toBeGreaterThan(0);
+    expect(stats.diskFree).toBeGreaterThan(0);
+  });
+
   test("pages through long lists", async ({ request }) => {
     for (let i = 0; i < 3; i++) await seedDiagram(request);
     await signIn(request);
@@ -497,6 +531,15 @@ test.describe("backoffice page", () => {
     await page.getByLabel("Password").fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByText("Database size")).toBeVisible();
+    await expect(page.getByText("Disk free")).toBeVisible();
+    // No size limit on this server, so no bar and no warning.
+    await expect(page.getByRole("progressbar")).toHaveCount(0);
+    const health = page.getByLabel("Server health");
+    await expect(health.getByText("Running for")).toBeVisible();
+    await expect(health).toContainText(/Less than a minute|\d+ minutes?/);
+    await expect(health).toContainText(/Delay \(typical \/ worst\)\d/);
+    await expect(health.getByText("Live connections")).toBeVisible();
+    await expect(health.getByText("Memory")).toBeVisible();
 
     await page.getByLabel("Search diagrams").fill(name);
     const row = page.getByRole("row", { name: new RegExp(name) });

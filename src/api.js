@@ -36,12 +36,20 @@ export class SignedOutError extends Error {
   }
 }
 
+/** The server has no room left for this: its database reached the size it is allowed. */
+export class StorageFullError extends Error {
+  constructor() {
+    super("The server is out of space");
+  }
+}
+
 // API requests never follow redirects: a redirect can only be a sign-in proxy
 // sending us to its login page, which a fetch cannot get through anyway.
 const API = { redirect: "manual" };
 
 async function failure(response) {
   if (response.status === 410) return new DeletedError();
+  if (response.status === 507) return new StorageFullError();
   if (response.status === 401 || response.type === "opaqueredirect") return new SignedOutError();
   return new Error(`Request failed: ${response.status} ${response.statusText}`);
 }

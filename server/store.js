@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync, statSync } from "node:fs";
+import { mkdirSync, statfsSync, statSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -9,6 +9,17 @@ const SEEN_WRITE_INTERVAL_MS = 5 * 60 * 1000;
 // Coming back to a diagram within this time counts as the same visit, so a
 // dropped connection or a reload does not inflate the count.
 const VISIT_GAP_MS = 30 * 60 * 1000;
+// With a size limit, the share of it at which new diagrams and images are
+// turned away, so that what is left goes to diagrams that already exist.
+const NEARLY_FULL = 0.9;
+// SQLite writes changes to a file beside the database before moving them in.
+// That file keeps the size of the largest burst of writes it has seen; this
+// brings it back down afterwards, so it cannot quietly hold on to disk space.
+const WRITE_AHEAD_KEPT_BYTES = 16 * 1024 * 1024;
+const SQLITE_FULL = 13;
+
+/** True for the error SQLite raises when a write would take the database past its size limit. */
+export const isStorageFull = (error) => error?.errcode === SQLITE_FULL;
 
 /**
  * SQLite-backed storage for diagrams, their image files, and the people who
@@ -25,8 +36,20 @@ const VISIT_GAP_MS = 30 * 60 * 1000;
  * not a login: it says "probably the same browser as before" and must never
  * decide what someone may do. The id is private to that person and the
  * server; everyone else only ever sees the unrelated `public_id`.
+ *
+ * `maxBytes` limits how large the database may grow. SQLite itself enforces
+ * it: a write that would take the database past the limit fails (see
+ * isStorageFull) and changes nothing. Reading and deleting always work, and
+ * what deleting frees is used again. A database already larger than a newly
+ * set limit is left as it is and simply cannot grow. The limit is on the
+ * database's contents; the write-ahead file beside it comes on top, up to
+ * the largest single save plus a few megabytes.
+ *
+ * @param {string} dataDir
+ * @param {object} [options]
+ * @param {number | null} [options.maxBytes] no limit when null
  */
-export function openStore(dataDir) {
+export function openStore(dataDir, { maxBytes = null } = {}) {
   mkdirSync(dataDir, { recursive: true });
   const dbPath = path.join(dataDir, "escalidusk.db");
   const db = new DatabaseSync(dbPath);
@@ -109,6 +132,18 @@ export function openStore(dataDir) {
       created_at INTEGER NOT NULL
     );
   `);
+
+  db.exec(`PRAGMA journal_size_limit = ${WRITE_AHEAD_KEPT_BYTES}`);
+  const pageSize = db.prepare("PRAGMA page_size").get().page_size;
+  // Set on every start: SQLite does not keep it in the file. Asking for
+  // fewer pages than there already are gives the current count instead.
+  if (maxBytes !== null) db.exec(`PRAGMA max_page_count = ${Math.floor(maxBytes / pageSize)}`);
+  const selectPageCount = db.prepare("PRAGMA page_count");
+  const selectFreePages = db.prepare("PRAGMA freelist_count");
+  // What the contents take up. Pages freed by deleting are not counted: they
+  // are used again before the database grows.
+  const usedBytes = () =>
+    (selectPageCount.get().page_count - selectFreePages.get().freelist_count) * pageSize;
 
   // Bring databases from earlier versions up to date.
   const diagramColumns = new Set(
@@ -355,10 +390,11 @@ export function openStore(dataDir) {
       if (!row) return false;
       db.exec("BEGIN");
       try {
-        insertDeleted.run(id, row.viewId, Date.now());
+        // Deletes first: on a full database they are what makes room for the note.
         deleteDiagramFiles.run(id);
         deleteDiagramVisits.run(id);
         deleteDiagramRow.run(id);
+        insertDeleted.run(id, row.viewId, Date.now());
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -413,14 +449,28 @@ export function openStore(dataDir) {
       return deleteFeedback.run(id).changes > 0;
     },
 
+    /**
+     * How full the database is. `nearlyFull` is the point from which new
+     * diagrams and images should be turned away; without a limit it is never true.
+     * @returns {{used: number, limit: number | null, nearlyFull: boolean}}
+     */
+    storage() {
+      const used = usedBytes();
+      return { used, limit: maxBytes, nearlyFull: maxBytes !== null && used >= maxBytes * NEARLY_FULL };
+    },
+
     /** Totals for the backoffice, plus what removeOrphanedImages() would free. */
     stats() {
       const orphaned = selectOrphanedImages.get({ $before: Date.now() - DAY_MS });
+      const disk = statfsSync(dataDir);
       return {
         ...selectTotals.get(),
         orphanedImages: orphaned.count,
         orphanedImageSize: orphaned.size,
         databaseSize: sizeOnDisk(),
+        storage: this.storage(),
+        // Room left on the disk the database is on, which it shares with whatever else is there.
+        diskFree: Number(disk.bavail) * Number(disk.bsize),
       };
     },
 

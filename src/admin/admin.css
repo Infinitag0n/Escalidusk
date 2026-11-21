@@ -183,6 +183,38 @@ header {
   font-variant-numeric: tabular-nums;
 }
 
+/* The database's size against its limit: a bar under the figures. */
+.storage progress {
+  display: block;
+  width: 14rem;
+  height: 0.4rem;
+  margin-top: 0.3rem;
+  accent-color: var(--accent);
+}
+
+.storage progress.storage--nearly-full {
+  accent-color: #c92a2a;
+}
+
+.storage .error {
+  display: block;
+  max-width: 22rem;
+  margin-top: 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+/* Server health: the same figures, smaller, under a rule. */
+.overview dl.health {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+}
+
+.overview .health dd {
+  font-size: 1rem;
+}
+
 .cleanup {
   margin: 0.9rem 0 0;
 }

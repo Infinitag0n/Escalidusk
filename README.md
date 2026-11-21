@@ -37,6 +37,7 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `BANNER` | unset | A thin yellow notice across the top of every page, such as `Experimental build 2026-11-18`. Plain text. Changing it needs only a restart |
 | `BASE_PATH` | unset | Serve the app under a path, such as `/draw`, instead of at the root. With Docker, set it as a build argument; see below |
 | `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`. Without it the backoffice does not exist |
+| `MAX_DATABASE_SIZE` | unset | The most the database may grow to, such as `5GB` or `500MB`. Unset means no limit. See "Running out of room" below |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so the visitor's address is read from `X-Forwarded-For` |
 | `ADDRESS_RETENTION_DAYS` | `90` | How long user-to-address links are kept |
 | `ADDRESS_SECRET` | generated | Key for hashing addresses. By default one is made up and stored in the database |
@@ -118,6 +119,18 @@ Setting `ADMIN_PASSWORD` switches on a backoffice at `<url>/admin`. Without it t
 - remove images that no diagram uses any more.
 
 The password is the only protection, and whoever has it can open and delete everything, so use a long one and serve the site over HTTPS. Five wrong passwords lock sign-in for five minutes. A session lasts twelve hours and is lost when the server restarts.
+
+The top of the backoffice shows how full the database is and how much room the disk has left, and how the server is doing: how long it has been running, how long it keeps everything waiting while busy (the one figure to watch: a few milliseconds is healthy, hundreds means people notice), how long saves take, live connections and messages, memory, and how many requests it failed to answer. These figures are measured in the server's memory and start over when it restarts; none of them is stored.
+
+## Running out of room
+
+Nothing expires by itself, so the database only grows. `MAX_DATABASE_SIZE` puts a ceiling on it, so that it fills up in an orderly way instead of filling the disk:
+
+- **From 90% of the limit**, new diagrams and new images are turned away. Diagrams that already exist still save, so nobody loses work in progress. In the editor the status reads **Storage full**; what was drawn stays on the page and is saved once there is room.
+- **At the limit**, SQLite itself refuses any write that would make the database larger, and changes nothing when it does. Opening and deleting diagrams always work.
+- **To make room**, delete diagrams or remove unused images in the backoffice, or raise the limit and restart. What deleting frees is used again straight away. The database file itself does not get smaller, though: SQLite keeps freed space inside the file for reuse instead of handing it back to the disk.
+
+The limit covers the database's contents. Beside the database SQLite keeps a write-ahead file (`escalidusk.db-wal`) that comes on top: usually a few megabytes, briefly as much as the largest save. Leave room for that, and for logs and the system, when choosing the limit. Setting a limit below what the database already holds is safe: it is left as it is and cannot grow.
 
 ## What is recorded about people
 

@@ -47,6 +47,7 @@ function parse(raw) {
 export function createLiveRooms() {
   const rooms = new Map(); // room id -> Set of clients
   const pending = new Set(); // connected, but not yet introduced
+  let relayed = 0; // messages passed on since the start, for the health report
 
   function send(client, text) {
     if (client.socket.readyState === OPEN) client.socket.send(text);
@@ -208,7 +209,10 @@ export function createLiveRooms() {
       socket.on("message", (raw) => {
         const message = parse(raw);
         if (!client.room) introduce(client, message);
-        else if (message) relay(client, message);
+        else if (message) {
+          relayed++;
+          relay(client, message);
+        }
       });
       socket.on("error", () => socket.terminate());
       socket.on("close", () => {
@@ -235,6 +239,18 @@ export function createLiveRooms() {
     /** How many connections each diagram with anyone on it has right now. */
     presence() {
       return new Map([...rooms].map(([roomId, room]) => [roomId, room.size]));
+    },
+
+    /** How many connections are open in all, introduced or not. */
+    connections() {
+      let total = pending.size;
+      for (const room of rooms.values()) total += room.size;
+      return total;
+    },
+
+    /** How many messages were passed on since the server started. */
+    messages() {
+      return relayed;
     },
 
     /** Tells everyone on a diagram that it was deleted, and disconnects them. */

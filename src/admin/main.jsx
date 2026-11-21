@@ -28,8 +28,25 @@ async function call(path, options = {}) {
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
+
+/** A length of time in its two largest units: "3 days 4 hours", "12 minutes". */
+function formatDuration(seconds) {
+  const parts = [
+    ["day", Math.floor(seconds / 86400)],
+    ["hour", Math.floor(seconds / 3600) % 24],
+    ["minute", Math.floor(seconds / 60) % 60],
+  ].filter(([, count]) => count > 0);
+  if (parts.length === 0) return "Less than a minute";
+  return parts
+    .slice(0, 2)
+    .map(([unit, count]) => `${count} ${unit}${count === 1 ? "" : "s"}`)
+    .join(" ");
+}
+
+const formatMs = (ms) => (ms === null ? "-" : `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`);
 
 const UNITS = [
   ["year", 365 * 24 * 3600],
@@ -484,7 +501,87 @@ function Feedback({ onSignedOut }) {
   );
 }
 
-function Overview({ stats, onSignedOut, onChanged }) {
+/** How full the database is, against its size limit when it has one. */
+function Storage({ stats }) {
+  const { used, limit, nearlyFull } = stats.storage;
+  if (limit === null) {
+    return (
+      <div>
+        <dt>Database size</dt>
+        <dd>{formatSize(stats.databaseSize)}</dd>
+      </div>
+    );
+  }
+  const percent = Math.min(100, Math.floor((used / limit) * 100));
+  const full = used >= limit;
+  return (
+    <div className="storage">
+      <dt>Database size</dt>
+      <dd>
+        {formatSize(used)} of {formatSize(limit)} ({percent}%)
+        <progress
+          className={nearlyFull ? "storage--nearly-full" : undefined}
+          max={limit}
+          value={Math.min(used, limit)}
+          aria-label="Database size used"
+        />
+        {nearlyFull && (
+          <span className="error" role="alert">
+            {full
+              ? "Full. Nothing can be saved until diagrams are deleted or the limit is raised."
+              : "Nearly full. New diagrams and images are turned away; existing diagrams still save."}
+          </span>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/** How the server is doing right now. Measured in the server's memory: it starts over on a restart. */
+function Health({ health }) {
+  if (!health) return null;
+  const { eventLoopDelay, saves } = health;
+  return (
+    <dl className="health" aria-label="Server health">
+      <div>
+        <dt>Running for</dt>
+        <dd title={`Started ${new Date(health.startedAt).toLocaleString()}`}>
+          {formatDuration(health.uptimeSeconds)}
+        </dd>
+      </div>
+      <div title="How long the server keeps everything waiting while it is busy, over the last hour. A few milliseconds is healthy; hundreds means people notice.">
+        <dt>Delay (typical / worst)</dt>
+        <dd>
+          {formatMs(eventLoopDelay.typicalMs)} / {formatMs(eventLoopDelay.worstMs)}
+        </dd>
+      </div>
+      <div title={`Over the last ${saves.count} saves`}>
+        <dt>Save time (typical / slow)</dt>
+        <dd>
+          {formatMs(saves.typicalMs)} / {formatMs(saves.slowMs)}
+        </dd>
+      </div>
+      <div>
+        <dt>Live connections</dt>
+        <dd>{health.connections}</dd>
+      </div>
+      <div>
+        <dt>Live messages, last minute</dt>
+        <dd>{health.messagesLastMinute}</dd>
+      </div>
+      <div>
+        <dt>Memory</dt>
+        <dd>{formatSize(health.memoryBytes)}</dd>
+      </div>
+      <div title="Requests the server failed to answer since it started">
+        <dt>Server errors</dt>
+        <dd>{health.serverErrors}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function Overview({ stats, health, onSignedOut, onChanged }) {
   const [message, setMessage] = useState(null);
 
   const cleanUp = async () => {
@@ -518,11 +615,13 @@ function Overview({ stats, onSignedOut, onChanged }) {
           <dt>Deleted diagrams</dt>
           <dd>{stats.deletedDiagrams}</dd>
         </div>
-        <div>
-          <dt>Database size</dt>
-          <dd>{formatSize(stats.databaseSize)}</dd>
+        <Storage stats={stats} />
+        <div title="Room left on the disk the database is on, which it shares with everything else there">
+          <dt>Disk free</dt>
+          <dd>{formatSize(stats.diskFree)}</dd>
         </div>
       </dl>
+      <Health health={health} />
       <p className="cleanup">
         {stats.orphanedImages > 0 ? (
           <>
@@ -550,6 +649,7 @@ function Backoffice({ onSignedOut }) {
     setTab(key);
   };
   const [stats, setStats] = useState(null);
+  const [health, setHealth] = useState(null);
 
   const loadStats = useCallback(async () => {
     try {
@@ -561,6 +661,17 @@ function Backoffice({ onSignedOut }) {
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  // Health changes by itself, so it is asked for again every half minute.
+  useEffect(() => {
+    const load = () =>
+      call("/health").then(setHealth, (failure) => {
+        if (failure instanceof SignedOut) onSignedOut();
+      });
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => clearInterval(timer);
+  }, [onSignedOut]);
 
   const signOut = async () => {
     await call("/logout", { method: "POST" }).catch(() => {});
@@ -575,7 +686,7 @@ function Backoffice({ onSignedOut }) {
           Sign out
         </button>
       </header>
-      <Overview stats={stats} onSignedOut={onSignedOut} onChanged={loadStats} />
+      <Overview stats={stats} health={health} onSignedOut={onSignedOut} onChanged={loadStats} />
       <nav role="tablist">
         {[
           ["diagrams", "Diagrams"],

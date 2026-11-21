@@ -121,6 +121,10 @@ const STATUSES = {
   saving: { label: "Saving…", title: "Saving changes" },
   error: { label: "Save failed", title: "Saving failed. Retrying automatically." },
   signedout: { label: "Signed out", title: "Sign in again to save. Your changes are kept." },
+  full: {
+    label: "Storage full",
+    title: "The server is out of space, so changes are not saved. They are kept on this page.",
+  },
   deleted: { label: "Deleted", title: "This diagram was deleted. Changes are no longer saved." },
 };
 
