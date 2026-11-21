@@ -175,6 +175,8 @@ export function registerAdmin(app, { store, live, health, password, basePath = "
         return reply.code(204).send();
       });
 
+      admin.get("/orphaned-images", async () => store.orphanedImages());
+
       admin.post("/remove-orphaned-images", async () => ({
         removed: store.removeOrphanedImages(),
       }));

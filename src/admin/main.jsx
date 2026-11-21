@@ -583,17 +583,32 @@ function Health({ health }) {
 
 function Overview({ stats, health, onSignedOut, onChanged }) {
   const [message, setMessage] = useState(null);
+  // What a check found: null until one is asked for. Checking reads every
+  // diagram, so it happens on request, not each time this page loads.
+  const [unused, setUnused] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-  const cleanUp = async () => {
+  const act = async (work, problem) => {
+    setBusy(true);
+    setMessage(null);
     try {
-      const { removed } = await call("/remove-orphaned-images", { method: "POST" });
-      setMessage(`Removed ${removed} unused image${removed === 1 ? "" : "s"}.`);
-      onChanged();
+      await work();
     } catch (failure) {
       if (failure instanceof SignedOut) return onSignedOut();
-      setMessage(`Could not clean up: ${failure.message}`);
+      setMessage(`${problem}: ${failure.message}`);
+    } finally {
+      setBusy(false);
     }
   };
+  const check = () =>
+    act(async () => setUnused(await call("/orphaned-images")), "Could not check");
+  const cleanUp = () =>
+    act(async () => {
+      const { removed } = await call("/remove-orphaned-images", { method: "POST" });
+      setUnused(null);
+      setMessage(`Removed ${removed} unused image${removed === 1 ? "" : "s"}.`);
+      onChanged();
+    }, "Could not clean up");
 
   if (!stats) return null;
   return (
@@ -619,11 +634,15 @@ function Overview({ stats, health, onSignedOut, onChanged }) {
       </dl>
       <Health health={health} />
       <p className="cleanup">
-        {stats.orphanedImages > 0 ? (
+        {unused === null ? (
+          <button type="button" onClick={check} disabled={busy}>
+            Check for unused images
+          </button>
+        ) : unused.count > 0 ? (
           <>
-            {stats.orphanedImages} image{stats.orphanedImages === 1 ? " is" : "s are"} no longer
-            used by any diagram ({formatSize(stats.orphanedImageSize)}).{" "}
-            <button type="button" onClick={cleanUp}>
+            {unused.count} image{unused.count === 1 ? " is" : "s are"} no longer used by any
+            diagram ({formatSize(unused.size)}).{" "}
+            <button type="button" onClick={cleanUp} disabled={busy}>
               Remove unused images
             </button>
           </>

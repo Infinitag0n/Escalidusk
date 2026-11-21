@@ -69,6 +69,7 @@ test.describe("backoffice sign-in", () => {
       request.get("/api/admin/stats"),
       request.delete(`/api/admin/diagrams/${id}`),
       request.post("/api/admin/remove-orphaned-images"),
+      request.get("/api/admin/orphaned-images"),
     ];
     for (const response of await Promise.all(attempts)) expect(response.status()).toBe(401);
     expect(await stored(request, id)).not.toBeNull();
@@ -505,12 +506,15 @@ test.describe("unused images", () => {
       2 * 24 * 60 * 60 * 1000,
     );
 
-    expect(store.stats()).toMatchObject({ images: 5, orphanedImages: 2, orphanedImageSize: 200 });
+    expect(store.stats()).toMatchObject({ images: 5 });
+    expect(store.orphanedImages()).toEqual({ count: 2, size: 200 });
     expect(store.removeOrphanedImages()).toBe(2);
     expect(
       db.prepare("SELECT file_id FROM files ORDER BY 1").all().map((row) => row.file_id),
     ).toEqual(["unused-new", "used", "used-by-deleted"]);
-    expect(store.stats().orphanedImages).toBe(0);
+    expect(store.orphanedImages()).toEqual({ count: 0, size: 0 });
+    // The totals the backoffice loads every time no longer include this count.
+    expect(store.stats()).not.toHaveProperty("orphanedImages");
     db.close();
     store.close();
   });

@@ -32,6 +32,11 @@ export const isStorageFull = (error) => error?.errcode === SQLITE_FULL;
  * Every diagram has two ids: `id` grants editing, `view_id` grants reading
  * only. Neither can be derived from the other.
  *
+ * A scene can be many megabytes, so nothing that lists or searches diagrams
+ * may read one. What the lists need (name, element count, size) is copied
+ * out of the scene into columns of its own each time it is saved, and those
+ * columns are in an index, which is all a listing or search then reads.
+ *
  * People are known by an id their browser made up. It is a soft identity,
  * not a login: it says "probably the same browser as before" and must never
  * decide what someone may do. The id is private to that person and the
@@ -158,21 +163,62 @@ export function openStore(dataDir, { maxBytes = null } = {}) {
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS diagrams_view_id ON diagrams (view_id)");
 
+  // What the lists show of a scene, kept beside it (see the note at the top).
+  // The name is cut to a sensible length: it is copied into an index, and
+  // nothing stops a scene from carrying an enormous one.
+  const SCENE_NAME = (scene) =>
+    `substr(CAST(COALESCE(json_extract(${scene}, '$.appState.name'), '') AS TEXT), 1, 200)`;
+  const SCENE_ELEMENTS = (scene) => `COALESCE(json_array_length(${scene}, '$.elements'), 0)`;
+  for (const [column, type] of [["name", "TEXT"], ["element_count", "INTEGER"], ["scene_size", "INTEGER"]]) {
+    if (!diagramColumns.has(column)) db.exec(`ALTER TABLE diagrams ADD COLUMN ${column} ${type}`);
+  }
+  // Fill them in for diagrams saved before they existed. This reads every
+  // such scene once; after that, starting up finds nothing left to do.
+  const fillSummary = db.prepare(
+    `UPDATE diagrams
+     SET name = ${SCENE_NAME("scene")}, element_count = ${SCENE_ELEMENTS("scene")}, scene_size = length(scene)
+     WHERE id = ?`,
+  );
+  for (const { id } of db.prepare("SELECT id FROM diagrams WHERE scene_size IS NULL").all()) {
+    try {
+      fillSummary.run(id);
+    } catch (error) {
+      // A database at its size limit may have no room to rewrite a row. The
+      // lists then show that diagram without a name until a later start.
+      if (!isStorageFull(error)) throw error;
+      break;
+    }
+  }
+  // Everything a listing, a search or a count of diagrams reads, in the
+  // order the list is shown in. With this they never touch the scenes.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS diagrams_listing ON diagrams
+      (updated_at DESC, id, view_id, created_by, updated_by, name, element_count, scene_size, version, created_at);
+    CREATE INDEX IF NOT EXISTS diagrams_created_by ON diagrams (created_by);
+    CREATE INDEX IF NOT EXISTS diagrams_updated_by ON diagrams (updated_by);
+  `);
+
   const DIAGRAM_COLUMNS = "id, view_id AS viewId, version, scene, updated_at AS updatedAt";
   const selectById = db.prepare(`SELECT ${DIAGRAM_COLUMNS} FROM diagrams WHERE id = ?`);
   const selectByViewId = db.prepare(`SELECT ${DIAGRAM_COLUMNS} FROM diagrams WHERE view_id = ?`);
   const insertDiagram = db.prepare(
-    `INSERT INTO diagrams (id, view_id, version, scene, created_at, updated_at, created_by, updated_by)
-     VALUES (?, ?, 1, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING RETURNING view_id AS viewId`,
+    `INSERT INTO diagrams
+       (id, view_id, version, scene, created_at, updated_at, created_by, updated_by,
+        name, element_count, scene_size)
+     VALUES ($id, $viewId, 1, $scene, $now, $now, $user, $user,
+        ${SCENE_NAME("$scene")}, ${SCENE_ELEMENTS("$scene")}, length($scene))
+     ON CONFLICT (id) DO NOTHING RETURNING view_id AS viewId`,
   );
   const updateDiagram = db.prepare(
     `UPDATE diagrams
-     SET version = version + 1, scene = ?, updated_at = ?, updated_by = COALESCE(?, updated_by)
-     WHERE id = ? AND version = ? RETURNING view_id AS viewId`,
+     SET version = version + 1, scene = $scene, updated_at = $now,
+         updated_by = COALESCE($user, updated_by),
+         name = ${SCENE_NAME("$scene")}, element_count = ${SCENE_ELEMENTS("$scene")},
+         scene_size = length($scene)
+     WHERE id = $id AND version = $version RETURNING view_id AS viewId`,
   );
   const selectName = db.prepare(
-    `SELECT COALESCE(json_extract(scene, '$.appState.name'), '') AS name
-     FROM diagrams WHERE id = ? OR view_id = ?`,
+    "SELECT COALESCE(name, '') AS name FROM diagrams WHERE id = ? OR view_id = ?",
   );
   const selectFile = db.prepare(
     "SELECT mime_type AS mimeType, data FROM files WHERE diagram_id = ? AND file_id = ?",
@@ -230,8 +276,7 @@ export function openStore(dataDir, { maxBytes = null } = {}) {
   const deleteDiagramRow = db.prepare("DELETE FROM diagrams WHERE id = ?");
   const deleteDiagramFiles = db.prepare("DELETE FROM files WHERE diagram_id = ?");
 
-  // The name lives inside the scene JSON; SQLite reads it out for listing and search.
-  const DIAGRAM_NAME = "COALESCE(json_extract(d.scene, '$.appState.name'), '')";
+  const DIAGRAM_NAME = "COALESCE(d.name, '')";
   // A search finds a diagram by part of its name, by either of its ids, or by
   // who created it: part of their name, or their whole public id. Names are
   // whatever people typed, so the id is the dependable way to find one person's diagrams.
@@ -244,8 +289,8 @@ export function openStore(dataDir, { maxBytes = null } = {}) {
     `SELECT d.id, d.view_id AS viewId, d.version,
             d.created_at AS createdAt, d.updated_at AS updatedAt,
             ${DIAGRAM_NAME} AS name,
-            json_array_length(d.scene, '$.elements') AS elementCount,
-            length(d.scene) AS sceneSize,
+            COALESCE(d.element_count, 0) AS elementCount,
+            COALESCE(d.scene_size, 0) AS sceneSize,
             (SELECT COUNT(*) FROM files f WHERE f.diagram_id = d.id) AS imageCount,
             (SELECT COALESCE(SUM(length(f.data)), 0) FROM files f WHERE f.diagram_id = d.id) AS imageSize,
             creator.display_name AS createdBy, creator.public_id AS createdById,
@@ -350,8 +395,8 @@ export function openStore(dataDir, { maxBytes = null } = {}) {
       const now = Date.now();
       const saved =
         baseVersion === 0
-          ? insertDiagram.get(id, randomUUID(), sceneJson, now, now, userId, userId)
-          : updateDiagram.get(sceneJson, now, userId, id, baseVersion);
+          ? insertDiagram.get({ $id: id, $viewId: randomUUID(), $scene: sceneJson, $now: now, $user: userId })
+          : updateDiagram.get({ $id: id, $version: baseVersion, $scene: sceneJson, $now: now, $user: userId });
       if (saved) {
         return { ok: true, version: baseVersion + 1, updatedAt: now, viewId: saved.viewId };
       }
@@ -459,16 +504,23 @@ export function openStore(dataDir, { maxBytes = null } = {}) {
       return { used, limit: maxBytes, nearlyFull: maxBytes !== null && used >= maxBytes * NEARLY_FULL };
     },
 
-    /** Totals for the backoffice, plus what removeOrphanedImages() would free. */
+    /** Totals for the backoffice. */
     stats() {
-      const orphaned = selectOrphanedImages.get({ $before: Date.now() - DAY_MS });
       return {
         ...selectTotals.get(),
-        orphanedImages: orphaned.count,
-        orphanedImageSize: orphaned.size,
         databaseSize: sizeOnDisk(),
         storage: this.storage(),
       };
+    },
+
+    /**
+     * What removeOrphanedImages() would free. Unlike everything else the
+     * backoffice asks, this reads every scene, so it is for when someone
+     * asks, not for every time the page loads.
+     * @returns {{count: number, size: number}}
+     */
+    orphanedImages() {
+      return selectOrphanedImages.get({ $before: Date.now() - DAY_MS });
     },
 
     /** Deletes images nothing refers to any more. Returns how many were removed. */
