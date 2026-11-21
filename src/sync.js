@@ -8,6 +8,7 @@ import {
   DeletedError,
   SignedOutError,
   StorageFullError,
+  TooLargeError,
   fetchDiagram,
   fetchFile,
   saveDiagram,
@@ -93,6 +94,7 @@ export class DiagramSync {
   #userId;
   #readOnly;
   #status = "saved";
+  #withoutMarkers = false; // the diagram only fits without its deleted-element markers
   #syncedFiles;
   #loadingFiles = new Set();
   #fileRetryAt = new Map();
@@ -115,7 +117,7 @@ export class DiagramSync {
    * @param {string} options.savedKey sceneKey() of the scene as loaded
    * @param {object} options.savedSettings sharedSettings() of the scene as loaded
    * @param {Iterable<string>} options.syncedFileIds image ids already on the server
-   * @param {(status: "saved" | "unsaved" | "saving" | "error" | "signedout" | "full") => void} options.onStatus
+   * @param {(status: "saved" | "unsaved" | "saving" | "error" | "signedout" | "full" | "toolarge") => void} options.onStatus
    * @param {boolean} [options.readOnly] opened through a read-only link
    * @param {(viewId: string) => void} [options.onViewId] told the read-only id after each save
    * @param {string} [options.userId] this browser's private user id, sent with saves
@@ -223,13 +225,15 @@ export class DiagramSync {
       }
       const signedOut = error instanceof SignedOutError;
       const full = error instanceof StorageFullError;
-      if (!signedOut && !full) console.error("Saving the diagram failed", error);
+      const tooLarge = error instanceof TooLargeError;
+      if (!signedOut && !full && !tooLarge) console.error("Saving the diagram failed", error);
       this.#dirty = true;
       this.#remoteOnly = false;
       this.#failed = true;
       // Retried all the same: signing in again in another tab lets it
-      // through, and so does room being made on the server.
-      this.#setStatus(signedOut ? "signedout" : full ? "full" : "error");
+      // through, and so does room being made on the server, or the diagram
+      // being made smaller.
+      this.#setStatus(signedOut ? "signedout" : full ? "full" : tooLarge ? "toolarge" : "error");
       this.#schedule(RETRY_DELAY_MS);
     } finally {
       this.#saving = false;
@@ -360,16 +364,32 @@ export class DiagramSync {
     if (key === this.#savedKey) return;
 
     const cutoff = Date.now() - DELETED_TTL_MS;
-    const result = await saveDiagram(
-      this.#id,
-      this.#version,
-      {
-        elements: elements.filter((element) => !element.isDeleted || element.updated > cutoff),
-        appState: settings,
-      },
-      key,
-      this.#userId,
-    );
+    const save = () =>
+      saveDiagram(
+        this.#id,
+        this.#version,
+        {
+          elements: elements.filter(
+            (element) => !element.isDeleted || (!this.#withoutMarkers && element.updated > cutoff),
+          ),
+          appState: settings,
+        },
+        key,
+        this.#userId,
+      );
+    let result;
+    try {
+      result = await save();
+    } catch (error) {
+      if (!(error instanceof TooLargeError) || this.#withoutMarkers) throw error;
+      // Too large with the markers of deleted elements in it. Leave those
+      // out from here on: otherwise deleting things could not make a diagram
+      // small enough to save again until the markers ran out, days later.
+      // The price is that someone holding an out-of-date copy may bring a
+      // deleted element back, which beats nobody being able to save.
+      this.#withoutMarkers = true;
+      result = await save();
+    }
 
     if (result.ok) {
       this.#version = result.version;

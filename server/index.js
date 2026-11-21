@@ -36,9 +36,12 @@ const LOG_REQUESTS = process.env.LOG_REQUESTS === "true";
 // The backoffice at /admin exists only when this is set.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 
-const MAX_SCENE_BYTES = 64 * 1024 * 1024;
+// How large one diagram may be, unless MAX_DIAGRAM_SIZE says otherwise.
+// Images are stored apart and do not count; 4 MB is some 7,000 shapes. The
+// server holds a diagram in memory several times over while saving it, so
+// this is also what keeps one save from using up a small machine's memory.
+const DEFAULT_DIAGRAM_BYTES = 4 * 1024 * 1024;
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
-const MAX_LIVE_MESSAGE_BYTES = 8 * 1024 * 1024;
 
 // Feedback is a few paragraphs at most.
 const MAX_FEEDBACK_CHARS = 4000;
@@ -59,13 +62,23 @@ const IMAGE_TYPES = new Set([
 
 // How large the database may grow, such as 5GB. Unset for no limit.
 let MAX_DATABASE_SIZE;
+let MAX_SCENE_BYTES;
 try {
   MAX_DATABASE_SIZE = parseSize(process.env.MAX_DATABASE_SIZE);
+  MAX_SCENE_BYTES =
+    parseSize(process.env.MAX_DIAGRAM_SIZE, {
+      name: "MAX_DIAGRAM_SIZE",
+      smallest: 100 * 1024,
+      smallestText: "100KB",
+    }) ?? DEFAULT_DIAGRAM_BYTES;
 } catch (error) {
   // A limit that was meant but mistyped must not quietly become "no limit".
   console.error(error.message);
   process.exit(1);
 }
+
+// A live message carries changed shapes, never more than a whole diagram.
+const MAX_LIVE_MESSAGE_BYTES = Math.min(MAX_SCENE_BYTES, 8 * 1024 * 1024);
 
 const store = openStore(DATA_DIR, { maxBytes: MAX_DATABASE_SIZE });
 // Set once the server (and with it the log) exists.

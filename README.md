@@ -38,6 +38,7 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `BASE_PATH` | unset | Serve the app under a path, such as `/draw`, instead of at the root. With Docker, set it as a build argument; see below |
 | `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`. Without it the backoffice does not exist |
 | `MAX_DATABASE_SIZE` | unset | The most the database may grow to, such as `5GB` or `500MB`. Unset means no limit. See "Running out of room" below |
+| `MAX_DIAGRAM_SIZE` | `4MB` | The largest a single diagram may be (some 7,000 shapes; images are stored apart and do not count). A larger one is not saved, and the editor says **Too large**. Saving holds a diagram in memory several times over, so on a small machine keep this small: in testing, one 48 MB diagram used more than 512 MB |
 | `LOG_REQUESTS` | `false` | Set to `true` to log every request. Otherwise only starting, warnings and failures are logged. See "Logs" below |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so the visitor's address is read from `X-Forwarded-For` |
 | `ADDRESS_RETENTION_DAYS` | `90` | How long user-to-address links are kept |

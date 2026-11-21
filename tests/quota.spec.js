@@ -48,6 +48,12 @@ test("sizes are read as written in .env", () => {
   for (const wrong of ["lots", "5 gigabytes", "-1GB", "GB", "100KB", "0"]) {
     expect(() => parseSize(wrong), wrong).toThrow(/MAX_DATABASE_SIZE/);
   }
+  // Another setting, with its own name and its own least.
+  const diagram = { name: "MAX_DIAGRAM_SIZE", smallest: 100 * 1024, smallestText: "100KB" };
+  expect(parseSize("500KB", diagram)).toBe(500 * 1024);
+  expect(parseSize("", diagram)).toBeNull();
+  expect(() => parseSize("50KB", diagram)).toThrow('MAX_DIAGRAM_SIZE: "50KB" is too small. The least that works is 100KB.');
+  expect(() => parseSize("big", diagram)).toThrow(/^MAX_DIAGRAM_SIZE: "big" is not a size/);
 });
 
 test.describe("a database with a size limit", () => {

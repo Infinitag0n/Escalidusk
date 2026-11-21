@@ -125,6 +125,10 @@ const STATUSES = {
     label: "Storage full",
     title: "The server is out of space, so changes are not saved. They are kept on this page.",
   },
+  toolarge: {
+    label: "Too large",
+    title: "This diagram is too large to save. Remove some of it; what is here is kept on this page.",
+  },
   deleted: { label: "Deleted", title: "This diagram was deleted. Changes are no longer saved." },
 };
 

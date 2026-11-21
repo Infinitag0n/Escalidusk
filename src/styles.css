@@ -74,6 +74,7 @@ body,
 .save-status--error,
 .save-status--signedout,
 .save-status--full,
+.save-status--toolarge,
 .save-status--deleted {
   color: #fff;
   background: #c92a2a;
