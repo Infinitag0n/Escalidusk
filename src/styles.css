@@ -121,8 +121,17 @@ body,
   display: none;
 }
 
-/* Library button: icon only, to leave room in the top bar. */
-.excalidraw .default-sidebar-trigger.sidebar-trigger .sidebar-trigger__label {
+/* No shape library: its "Browse libraries" link hands the diagram's address,
+   which is its editing link, to Excalidraw's site, and "Publish" uploads
+   shapes there. Excalidraw has no setting for it, so every way in is hidden:
+   the button, "Add to library" in the right-click menu, and the library tab
+   of the sidebar. The sidebar itself stays, for searching (Ctrl+F); with only
+   that tab left, its tab buttons go too (with a selector specific enough to
+   out-rank Excalidraw's own rule). */
+.excalidraw .sidebar-trigger__label-element:has(.default-sidebar-trigger),
+.excalidraw .context-menu li[data-testid="addToLibrary"],
+.excalidraw .default-sidebar .sidebar__header .sidebar-triggers,
+.excalidraw .default-sidebar:has([data-testid="library"][data-state="active"]) {
   display: none;
 }
 

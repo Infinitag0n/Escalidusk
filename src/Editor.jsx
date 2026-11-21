@@ -36,7 +36,6 @@ import { DiagramSync, fetchSceneFiles, sceneKey, sharedSettings } from "./sync.j
 
 // Per-browser preferences; these are not part of the shared diagram.
 const THEME_KEY = "escalidusk:theme";
-const LIBRARY_KEY = "escalidusk:library";
 const USERNAME_KEY = "escalidusk:username";
 
 const USER_ID_KEY = "escalidusk:user-id";
@@ -104,7 +103,6 @@ async function loadDiagram(id) {
       elements,
       files,
       appState: { ...settings, theme: readLocal(THEME_KEY, "light") },
-      libraryItems: readLocal(LIBRARY_KEY, []),
       scrollToContent: true,
     },
   };
@@ -916,7 +914,6 @@ function OpenDiagram({ id, addressId, startViewing }) {
         onPointerUpdate={(payload) => liveRef.current?.handlePointer(payload)}
         isCollaborating={peerCount > 0}
         onLinkOpen={onLinkOpen}
-        onLibraryChange={(items) => writeLocal(LIBRARY_KEY, items)}
         renderTopRightUI={(isMobile) =>
           isMobile ? null : (
             <>

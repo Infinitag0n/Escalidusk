@@ -155,15 +155,57 @@ test.describe("save status", () => {
   });
 });
 
-test("the Library button shows only its icon and still opens the library", async ({ page }) => {
-  await openDiagram(page);
-  const trigger = page.locator(".sidebar-trigger").first();
+test.describe("no shape library", () => {
+  test("there is no Library button, and no 'Add to library' on a shape", async ({ page, request }) => {
+    const id = await openDiagram(page);
+    await expect(page.getByTitle("Library")).toBeHidden();
+    await expect(page.locator(".default-sidebar-trigger")).toBeHidden();
 
-  await expect(page.locator(".sidebar-trigger__label").first()).toBeHidden();
-  expect((await trigger.boundingBox()).width).toBeLessThan(50);
+    await drawRectangle(page, 300, 250);
+    await expectStoredCount(request, id, 1);
+    await page.mouse.click(360, 290, { button: "right" });
+    // The shape's menu is open, with its other entries.
+    await expect(page.locator('.context-menu [data-testid="copyStyles"]')).toBeVisible();
+    await expect(page.locator('.context-menu [data-testid="addToLibrary"]')).toBeHidden();
+  });
 
-  await trigger.click({ force: true });
-  await expect(page.locator(".sidebar")).toBeVisible();
+  test("searching the canvas still opens the sidebar, with no way from there to the library", async ({
+    page,
+  }) => {
+    await openDiagram(page);
+    await page.mouse.click(600, 500); // give the canvas the keyboard
+    await page.keyboard.press("Control+f");
+    const sidebar = page.locator(".default-sidebar");
+    await expect(sidebar.getByPlaceholder("Find text on canvas...")).toBeVisible();
+    await expect(sidebar.getByRole("tab")).toHaveCount(0);
+    await expect(sidebar.locator('[data-testid="sidebar-close"]')).toBeVisible();
+  });
+
+  test("dropping a library file on the canvas does not bring the library up", async ({ page }) => {
+    await openDiagram(page);
+    await page.evaluate(() => {
+      const library = {
+        type: "excalidrawlib",
+        version: 2,
+        libraryItems: [{ id: "item", status: "unpublished", created: 1, elements: [] }],
+      };
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File([JSON.stringify(library)], "shapes.excalidrawlib", {
+          type: "application/vnd.excalidrawlib+json",
+        }),
+      );
+      document
+        .querySelector(".excalidraw canvas.interactive")
+        .dispatchEvent(
+          new DragEvent("drop", { dataTransfer: transfer, clientX: 600, clientY: 400, bubbles: true, cancelable: true }),
+        );
+    });
+    // Excalidraw switches to its library panel; it must not be shown.
+    await expect(page.locator('.default-sidebar [data-testid="library"][data-state="active"]')).toHaveCount(1);
+    await expect(page.locator(".default-sidebar")).toBeHidden();
+    await expect(page.locator(".library-menu-browse-button")).toBeHidden();
+  });
 });
 
 test("the help dialog lists the shortcuts, without links to Excalidraw's sites", async ({ page }) => {
