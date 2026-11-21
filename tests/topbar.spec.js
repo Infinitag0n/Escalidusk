@@ -13,6 +13,8 @@ import {
 } from "./helpers.js";
 
 const SAVE_URL = /\/api\/diagrams\/[0-9a-f-]{36}$/;
+// The buttons at the right of the top bar; "Connect", beside the toolbar, is styled like them.
+const SHARE_BUTTONS = ".layer-ui__wrapper__top-right .share-button";
 
 test.describe("share buttons", () => {
   test("stay disabled until the diagram has been saved", async ({ page, request }) => {
@@ -34,17 +36,17 @@ test.describe("share buttons", () => {
     const { id, viewId } = await seedDiagram(request, { elements: [rectangle()] });
     await openDiagram(page, id);
 
-    await page.locator(".share-button").nth(0).click();
+    await page.locator(SHARE_BUTTONS).nth(0).click();
     await expect.poll(() => clipboard(page)).toBe(`${baseURL}/${viewId}`);
 
-    await page.locator(".share-button").nth(1).click();
+    await page.locator(SHARE_BUTTONS).nth(1).click();
     await expect.poll(() => clipboard(page)).toBe(`${baseURL}/${id}`);
   });
 
   test("confirm with 'Copied' without changing the layout", async ({ page, request }) => {
     const { id } = await seedDiagram(request, { elements: [rectangle()] });
     await openDiagram(page, id);
-    const share = page.locator(".share-button").nth(0);
+    const share = page.locator(SHARE_BUTTONS).nth(0);
     const before = await topBarLayout(page);
 
     await share.click();
@@ -85,7 +87,7 @@ test.describe("share buttons", () => {
           style.boxShadow,
         ].join(";");
       });
-    expect(await shape(".share-button")).toBe(await shape(".save-status"));
+    expect(await shape(SHARE_BUTTONS)).toBe(await shape(".save-status"));
   });
 });
 

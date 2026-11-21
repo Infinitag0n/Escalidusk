@@ -434,9 +434,20 @@ body,
   overflow-y: auto;
 }
 
-/* "Connect" sits at the left end of the footer's free space. */
-.excalidraw .link-diagram-button {
+/* "Connect" sits just right of the toolbar, outside it (see ConnectButton). */
+.excalidraw .toolbar-side {
+  display: flex;
+  align-items: center;
   margin-left: 0.5rem;
+  pointer-events: auto;
+}
+
+/* In a narrow window it would push the buttons on the right off the screen;
+   the menu still offers it. */
+@media (max-width: 960px) {
+  .excalidraw .toolbar-side {
+    display: none;
+  }
 }
 
 .link-diagram-button > span {

@@ -193,6 +193,42 @@ test("only other diagrams are offered, and a read-only page cannot add links", a
   await expect(page.getByRole("button", { name: "Connect to a diagram…" })).toBeVisible();
   await page.keyboard.press("Escape");
 
+  // It sits just right of the toolbar, outside it, level with it.
+  const connect = page.getByRole("button", { name: "Connect", exact: true });
+  const place = async () => {
+    const toolbar = await page.locator(".App-toolbar").boundingBox();
+    const button = await connect.boundingBox();
+    const share = await page.getByRole("button", { name: "Share", exact: true }).boundingBox();
+    return {
+      gap: button.x - (toolbar.x + toolbar.width),
+      offCentre: Math.abs(button.y + button.height / 2 - (toolbar.y + toolbar.height / 2)),
+      beforeShare: share.x - (button.x + button.width),
+    };
+  };
+  const placed = await place();
+  expect(placed.gap).toBeGreaterThan(4);
+  expect(placed.gap).toBeLessThan(24);
+  expect(placed.offCentre).toBeLessThan(2);
+  expect(placed.beforeShare).toBeGreaterThan(0);
+  await expect(page.locator(".App-toolbar").getByRole("button", { name: "Connect" })).toHaveCount(0);
+
+  // It is gone while viewing and back, in the same place, afterwards.
+  await page.locator('[data-testid="main-menu-trigger"]').click();
+  await page.getByRole("button", { name: "View mode" }).click();
+  await expect(connect).toHaveCount(0);
+  await page.locator('[data-testid="main-menu-trigger"]').click();
+  await page.getByRole("button", { name: "Edit mode" }).click();
+  await expect(connect).toHaveCount(1);
+  expect(await place()).toEqual(placed);
+
+  // In a narrow window it gives way to the buttons on the right; the menu still has it.
+  await page.setViewportSize({ width: 900, height: 720 });
+  await expect(connect).toBeHidden();
+  const status = await page.getByRole("status").first().boundingBox();
+  expect(status.x + status.width).toBeLessThanOrEqual(900);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(connect).toBeVisible();
+
   const { viewId } = await seedDiagram(request, { elements: [rectangle()] });
   await openDiagram(page, viewId);
   await expect(page.getByRole("button", { name: "Connect", exact: true })).toHaveCount(0);

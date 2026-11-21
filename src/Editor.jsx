@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   CaptureUpdateAction,
   Excalidraw,
@@ -326,35 +327,78 @@ function LaserButton({ active, onToggle }) {
   );
 }
 
+// The row Excalidraw lays its toolbar out in, on the desktop layout only.
+const TOOLBAR_ROW = ".excalidraw .App-menu_top .App-toolbar-container";
+
+/**
+ * "Connect", just right of the toolbar and outside it. Excalidraw has no
+ * place for a button there, so a holder of our own is added to the row the
+ * toolbar sits in, and kept there as Excalidraw redraws it. The phone layout
+ * has no such row; there the menu offers the same thing.
+ *
+ * This leans on Excalidraw's class names; see UPGRADING-EXCALIDRAW.md.
+ */
+function ConnectButton({ onClick }) {
+  const [holder, setHolder] = useState(null);
+
+  useEffect(() => {
+    const root = document.querySelector(".excalidraw");
+    if (!root) return undefined;
+    let own = null;
+    const sync = () => {
+      const row = document.querySelector(TOOLBAR_ROW);
+      if (row && own?.parentElement === row) return;
+      own?.remove();
+      own = null;
+      if (row) {
+        own = document.createElement("div");
+        own.className = "toolbar-side";
+        row.append(own);
+      }
+      setHolder(own);
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      own?.remove();
+    };
+  }, []);
+
+  if (!holder) return null;
+  return createPortal(
+    <button
+      type="button"
+      className="top-pill share-button link-diagram-button"
+      title="Connect this diagram to another one"
+      onClick={onClick}
+    >
+      <span>
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path
+            d="M7 4h10l5 8-5 8H7l-5-8z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+        </svg>
+        Connect
+      </span>
+    </button>,
+    holder,
+  );
+}
+
 /**
  * Our own display name, as plain editable text in the bottom-right corner
  * just before the help button. Rendered through Excalidraw's footer, which
  * does not exist on the phone layout.
  */
-function UserNameField({ value, onEdit, onDone, onLinkDiagram }) {
+function UserNameField({ value, onEdit, onDone }) {
   return (
     <Footer>
-      {onLinkDiagram && (
-        <button
-          type="button"
-          className="top-pill share-button link-diagram-button"
-          title="Connect this diagram to another one"
-          onClick={onLinkDiagram}
-        >
-          <span>
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-              <path
-                d="M7 4h10l5 8-5 8H7l-5-8z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-            </svg>
-            Connect
-          </span>
-        </button>
-      )}
       {/* No type attribute, for the same reason as the diagram name. */}
       <input
         className="user-name"
@@ -953,8 +997,8 @@ function OpenDiagram({ id, addressId, startViewing }) {
           value={username}
           onEdit={onUsernameEdit}
           onDone={onUsernameDone}
-          onLinkDiagram={canEdit && !deleted && !viewMode ? () => setPicker("link") : null}
         />
+        {canEdit && !deleted && !viewMode && <ConnectButton onClick={() => setPicker("link")} />}
         {api && !viewing && <MovedTools api={api} activeTool={activeTool} />}
         <MainMenu>
           <MainMenu.Item onSelect={() => window.open(appPath("/new"), "_blank")}>New diagram</MainMenu.Item>
