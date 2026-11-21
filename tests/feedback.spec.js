@@ -238,27 +238,43 @@ test("the backoffice page shows feedback, exports it and deletes it", async ({ p
   await expect(row).toHaveCount(0);
 });
 
-test("a server without a backoffice takes no feedback and does not offer to", async ({ browser }) => {
-  const server = await startServer({ ADMIN_PASSWORD: "" });
+test("a server without a backoffice still takes feedback, to be read once it has one", async ({
+  browser,
+}) => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "escalidusk-feedback-later-"));
+  const message = unique("Written before anyone could read it");
+  let server = await startServer({ ADMIN_PASSWORD: "", DATA_DIR: dataDir });
   try {
-    expect(await (await fetch(`${server.url}/api/config`)).json()).toEqual({ feedback: false });
-    const response = await fetch(`${server.url}/api/feedback`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "Anyone there?" }),
-    });
-    expect(response.status).toBe(404);
-
     const page = await browser.newPage();
-    const config = page.waitForResponse("**/api/config");
     await page.goto(`${server.url}/new`);
     await page.waitForSelector(".excalidraw canvas");
-    await config;
-    await expect(page.getByRole("button", { name: "Send feedback", exact: true })).toHaveCount(0);
     await page.locator('[data-testid="main-menu-trigger"]').click();
-    await expect(page.locator('[data-testid="help-menu-item"]')).toBeVisible();
-    await expect(page.getByRole("button", { name: "Send feedback…" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Send feedback…" })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Send feedback", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Send feedback" });
+    await dialog.getByLabel("Your feedback").fill(message);
+    await dialog.getByRole("button", { name: "Send" }).click();
+    await expect(dialog.getByRole("status")).toHaveText("Thank you. Your feedback was sent.");
     await page.close();
+    // Nobody can read it yet.
+    expect((await fetch(`${server.url}/api/admin/feedback`)).status).toBe(404);
+  } finally {
+    server.stop();
+  }
+
+  // The same database, now with a password: the message is there.
+  server = await startServer({ ADMIN_PASSWORD: PASSWORD, DATA_DIR: dataDir });
+  try {
+    const login = await fetch(`${server.url}/api/admin/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: PASSWORD }),
+    });
+    const cookie = login.headers.get("set-cookie").split(";")[0];
+    const list = await fetch(`${server.url}/api/admin/feedback`, { headers: { cookie } });
+    expect((await list.json()).feedback.map((entry) => entry.message)).toEqual([message]);
   } finally {
     server.stop();
   }

@@ -19,7 +19,7 @@ import {
   withCurrentAddresses,
   withCurrentNames,
 } from "./diagramLinks.js";
-import { FeedbackDialog, feedbackIcon, useFeedbackOffered } from "./Feedback.jsx";
+import { FeedbackDialog, feedbackIcon } from "./Feedback.jsx";
 import { MovedTools, isMovedTool } from "./MovedTools.jsx";
 import { LiveSession } from "./live.js";
 import { appPath, appUrl, routeOf } from "./paths.js";
@@ -428,17 +428,15 @@ function UserNameField({ value, onEdit, onDone, onFeedback }) {
           if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
         }}
       />
-      {onFeedback && (
-        <button
-          type="button"
-          className="feedback-button"
-          title="Send feedback"
-          aria-label="Send feedback"
-          onClick={onFeedback}
-        >
-          {feedbackIcon}
-        </button>
-      )}
+      <button
+        type="button"
+        className="feedback-button"
+        title="Send feedback"
+        aria-label="Send feedback"
+        onClick={onFeedback}
+      >
+        {feedbackIcon}
+      </button>
     </Footer>
   );
 }
@@ -518,7 +516,6 @@ function OpenDiagram({ id, addressId, startViewing }) {
   // How many other people have this diagram open right now.
   const [peerCount, setPeerCount] = useState(0);
   const [connectPlaced, setConnectPlaced] = useState(false);
-  const feedbackOffered = useFeedbackOffered();
   const liveRef = useRef(null);
   const syncRef = useRef(null);
   const themeRef = useRef(null);
@@ -1024,7 +1021,7 @@ function OpenDiagram({ id, addressId, startViewing }) {
           value={username}
           onEdit={onUsernameEdit}
           onDone={onUsernameDone}
-          onFeedback={feedbackOffered ? () => setPicker("feedback") : null}
+          onFeedback={() => setPicker("feedback")}
         />
         {canEdit && !deleted && !viewMode && (
           <ConnectButton onClick={() => setPicker("link")} onPlaced={setConnectPlaced} />
@@ -1047,11 +1044,9 @@ function OpenDiagram({ id, addressId, startViewing }) {
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.SearchMenu />
           <MainMenu.DefaultItems.Help />
-          {feedbackOffered && (
-            <MainMenu.Item icon={feedbackIcon} onSelect={() => setPicker("feedback")}>
-              Send feedback…
-            </MainMenu.Item>
-          )}
+          <MainMenu.Item icon={feedbackIcon} onSelect={() => setPicker("feedback")}>
+            Send feedback…
+          </MainMenu.Item>
           {!viewing && <MainMenu.DefaultItems.ClearCanvas />}
           <MainMenu.Separator />
           <MainMenu.DefaultItems.ToggleTheme />

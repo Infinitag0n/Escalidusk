@@ -4,22 +4,6 @@ import { appPath } from "./paths.js";
 // The server's own limit; see MAX_FEEDBACK_CHARS in server/index.js.
 const MAX_LENGTH = 4000;
 
-/** Whether this server takes feedback. It does only when it has a backoffice to read it in. */
-export function useFeedbackOffered() {
-  const [offered, setOffered] = useState(false);
-  useEffect(() => {
-    let current = true;
-    fetch(appPath("/api/config"), { redirect: "manual" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((config) => current && setOffered(config?.feedback === true))
-      .catch(() => {});
-    return () => {
-      current = false;
-    };
-  }, []);
-  return offered;
-}
-
 /** The speech-bubble icon of the feedback button. */
 export const feedbackIcon = (
   <svg

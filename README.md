@@ -36,7 +36,7 @@ Then open <http://localhost:3000>. Diagrams are kept in the `escalidusk-data` vo
 | `DATA_DIR` | `/data`   | Folder holding the database     |
 | `BANNER` | unset | A thin yellow notice across the top of every page, such as `Experimental build 2026-11-18`. Plain text. Changing it needs only a restart |
 | `BASE_PATH` | unset | Serve the app under a path, such as `/draw`, instead of at the root. With Docker, set it as a build argument; see below |
-| `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`, and with it **Send feedback** in the editor. Without it neither exists |
+| `ADMIN_PASSWORD` | unset | Switches on the backoffice at `/admin`. Without it the backoffice does not exist |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy, so the visitor's address is read from `X-Forwarded-For` |
 | `ADDRESS_RETENTION_DAYS` | `90` | How long user-to-address links are kept |
 | `ADDRESS_SECRET` | generated | Key for hashing addresses. By default one is made up and stored in the database |
@@ -114,7 +114,7 @@ Setting `ADMIN_PASSWORD` switches on a backoffice at `<url>/admin`. Without it t
 - see every diagram, with who created and last changed it, its size, how many people have it open, and who has ever opened it (with view or edit access, when, and how often), and open any of them;
 - delete a diagram. This is permanent. Its links then say it was deleted, and anyone who has it open is told and keeps their copy on screen, but can no longer save it;
 - see the people the server knows about (see below), with how many addresses each was seen from and how many other people share one;
-- read what people sent through **Send feedback** (the speech-bubble button at the bottom right of the editor, or in its menu), delete it, and export all of it as JSON or text. Only the message and the time it was sent are stored, not who sent it or from which diagram. A message is at most 4000 characters; nothing limits how many are sent;
+- read what people sent through **Send feedback** (the speech-bubble button at the bottom right of the editor, or in its menu), delete it, and export all of it as JSON or text. Only the message and the time it was sent are stored, not who sent it or from which diagram. A message is at most 4000 characters; nothing limits how many are sent. Feedback is taken even while there is no backoffice, and waits in the database until `ADMIN_PASSWORD` is set;
 - remove images that no diagram uses any more.
 
 The password is the only protection, and whoever has it can open and delete everything, so use a long one and serve the site over HTTPS. Five wrong passwords lock sign-in for five minutes. A session lasts twelve hours and is lost when the server restarts.

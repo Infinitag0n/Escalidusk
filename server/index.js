@@ -107,23 +107,19 @@ app.get("/api/health", async () => ({ ok: true }));
 
 registerAdmin(app, { store, live, password: ADMIN_PASSWORD, basePath: BASE_PATH });
 
-// What this server offers, for the pages to adapt to.
-app.get("/api/config", async () => ({ feedback: Boolean(ADMIN_PASSWORD) }));
-
-// Feedback is read in the backoffice, so without one there is nowhere to send it.
-if (ADMIN_PASSWORD) {
-  // Only the words are kept (and the time): not who sent them, nor from where.
-  app.post("/api/feedback", async (request, reply) => {
-    const message = typeof request.body?.message === "string" ? request.body.message.trim() : "";
-    if (!message || message.length > MAX_FEEDBACK_CHARS) {
-      return reply
-        .code(400)
-        .send({ error: `expected { message: 1 to ${MAX_FEEDBACK_CHARS} characters }` });
-    }
-    store.addFeedback(message);
-    return reply.code(204).send();
-  });
-}
+// Only the words are kept (and the time): not who sent them, nor from where.
+// Feedback is taken whether or not there is a backoffice to read it in: it
+// waits in the database until ADMIN_PASSWORD is set.
+app.post("/api/feedback", async (request, reply) => {
+  const message = typeof request.body?.message === "string" ? request.body.message.trim() : "";
+  if (!message || message.length > MAX_FEEDBACK_CHARS) {
+    return reply
+      .code(400)
+      .send({ error: `expected { message: 1 to ${MAX_FEEDBACK_CHARS} characters }` });
+  }
+  store.addFeedback(message);
+  return reply.code(204).send();
+});
 
 app.get("/api/diagrams/:id", async (request, reply) => {
   const { id } = request.params;
