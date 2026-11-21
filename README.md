@@ -111,9 +111,9 @@ Good to know:
 
 Setting `ADMIN_PASSWORD` switches on a backoffice at `<url>/admin`. Without it there is no such page and no backoffice API: `/admin` behaves like any other address that is not a diagram. After signing in with that password you can:
 
-- see every diagram, with who created and last changed it, its size, how many people have it open, and who has ever opened it (with view or edit access, when, and how often), and open any of them;
+- see every diagram, with who created and last changed it (by name and id; searching by a creator's name or id lists the diagrams they created), its size, how many people have it open, and who has ever opened it (with view or edit access, when, and how often), and open any of them;
 - delete a diagram. This is permanent. Its links then say it was deleted, and anyone who has it open is told and keeps their copy on screen, but can no longer save it;
-- see the people the server knows about (see below), with how many addresses each was seen from and how many other people share one;
+- see the people the server knows about (see below), each with their id, which unlike a name they cannot change, and with how many addresses each was seen from and how many other people share one;
 - read what people sent through **Send feedback** (the speech-bubble button at the bottom right of the editor, or in its menu), delete it, and export all of it as JSON or text. Only the message and the time it was sent are stored, not who sent it or from which diagram. A message is at most 4000 characters; nothing limits how many are sent. Feedback is taken even while there is no backoffice, and waits in the database until `ADMIN_PASSWORD` is set;
 - remove images that no diagram uses any more.
 

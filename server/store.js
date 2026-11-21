@@ -197,7 +197,14 @@ export function openStore(dataDir) {
 
   // The name lives inside the scene JSON; SQLite reads it out for listing and search.
   const DIAGRAM_NAME = "COALESCE(json_extract(d.scene, '$.appState.name'), '')";
-  const DIAGRAM_MATCH = `($search = '' OR instr(lower(${DIAGRAM_NAME}), lower($search)) > 0 OR d.id = $search OR d.view_id = $search)`;
+  // A search finds a diagram by part of its name, by either of its ids, or by
+  // who created it: part of their name, or their whole public id. Names are
+  // whatever people typed, so the id is the dependable way to find one person's diagrams.
+  const DIAGRAM_MATCH = `($search = ''
+       OR instr(lower(${DIAGRAM_NAME}), lower($search)) > 0
+       OR d.id = $search OR d.view_id = $search
+       OR instr(lower(creator.display_name), lower($search)) > 0
+       OR creator.public_id = $search)`;
   const selectDiagramList = db.prepare(
     `SELECT d.id, d.view_id AS viewId, d.version,
             d.created_at AS createdAt, d.updated_at AS updatedAt,
@@ -206,7 +213,8 @@ export function openStore(dataDir) {
             length(d.scene) AS sceneSize,
             (SELECT COUNT(*) FROM files f WHERE f.diagram_id = d.id) AS imageCount,
             (SELECT COALESCE(SUM(length(f.data)), 0) FROM files f WHERE f.diagram_id = d.id) AS imageSize,
-            creator.display_name AS createdBy, editor.display_name AS updatedBy,
+            creator.display_name AS createdBy, creator.public_id AS createdById,
+            editor.display_name AS updatedBy, editor.public_id AS updatedById,
             (SELECT COUNT(*) FROM diagram_visits v WHERE v.diagram_id = d.id) AS seenBy
      FROM diagrams d
      LEFT JOIN users creator ON creator.id = d.created_by
@@ -215,7 +223,11 @@ export function openStore(dataDir) {
      ORDER BY d.updated_at DESC, d.id
      LIMIT $limit OFFSET $offset`,
   );
-  const countDiagramList = db.prepare(`SELECT COUNT(*) AS total FROM diagrams d WHERE ${DIAGRAM_MATCH}`);
+  const countDiagramList = db.prepare(
+    `SELECT COUNT(*) AS total FROM diagrams d
+     LEFT JOIN users creator ON creator.id = d.created_by
+     WHERE ${DIAGRAM_MATCH}`,
+  );
 
   const USER_MATCH = "($search = '' OR instr(lower(u.display_name), lower($search)) > 0 OR u.public_id = $search)";
   const selectUserList = db.prepare(
@@ -348,7 +360,8 @@ export function openStore(dataDir) {
 
     /**
      * Diagrams for the backoffice, most recently changed first. `search`
-     * matches part of the name, or a whole editing or read-only id.
+     * matches part of the name, a whole editing or read-only id, or the
+     * creator: part of their name or their whole public id.
      * @returns {{total: number, diagrams: object[]}}
      */
     listDiagrams({ search = "", limit = 50, offset = 0 } = {}) {

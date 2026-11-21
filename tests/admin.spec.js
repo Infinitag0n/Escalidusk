@@ -184,6 +184,52 @@ test.describe("backoffice data", () => {
     // Listing people never exposes anyone's private id.
     const people = await (await request.get("/api/admin/users", { params: { limit: 200 } })).text();
     expect(people).not.toContain(user);
+    expect(JSON.stringify(byName)).not.toContain(user);
+  });
+
+  test("finds the diagrams a person created, by their id or their name", async ({ request, baseURL }) => {
+    const [ada, other] = [newId(), newId()];
+    const adaName = `Ada ${ada.slice(0, 8)}`;
+    const save = (id, user, name) =>
+      request.put(`/api/diagrams/${id}`, {
+        headers: { "X-User-Id": user },
+        data: { baseVersion: 0, elements: [], appState: { name } },
+      });
+    const [first, second, theirs] = [newId(), newId(), newId()];
+    await save(first, ada, "First of two");
+    await save(second, ada, "Second of two");
+    await save(theirs, other, "Another person's");
+    // Ada later changes the other person's diagram: that does not make it hers.
+    await request.put(`/api/diagrams/${theirs}`, {
+      headers: { "X-User-Id": ada },
+      data: { baseVersion: 1, elements: [], appState: { name: "Another person's" } },
+    });
+    // People get their names over the live connection.
+    (await connectLive(baseURL, first, { user: ada, name: adaName })).socket.close();
+    await signIn(request);
+
+    const users = async (search) =>
+      (await (await request.get("/api/admin/users", { params: { search } })).json()).users;
+    const [person] = await users(adaName);
+    expect(person).toMatchObject({ name: adaName, created: 2 });
+    expect(person.publicId).not.toBe(ada);
+    expect((await users(person.publicId)).map((user) => user.name)).toEqual([adaName]);
+
+    const ids = (diagrams) => diagrams.map((diagram) => diagram.id).sort();
+    const byId = await find(request, person.publicId);
+    expect(ids(byId)).toEqual([first, second].sort());
+    expect(byId[0]).toMatchObject({ createdBy: adaName, createdById: person.publicId });
+    expect(ids(await find(request, adaName.toLowerCase()))).toEqual([first, second].sort());
+    // Their private id finds nothing: it is not something the backoffice deals in.
+    expect(await find(request, ada)).toEqual([]);
+
+    const [changed] = await find(request, theirs);
+    expect(changed.updatedById).toBe(person.publicId);
+    expect(changed.createdById).not.toBe(person.publicId);
+    const page = await (
+      await request.get("/api/admin/diagrams", { params: { search: person.publicId, limit: 1 } })
+    ).json();
+    expect(page.total).toBe(2);
   });
 
   test("shows how many connections a diagram has right now", async ({ request, baseURL }) => {
@@ -461,6 +507,53 @@ test.describe("backoffice page", () => {
     expect((await request.get(`/api/diagrams/${id}`)).status()).toBe(410);
   });
 
+  test("from a person to the diagrams they created, and from a diagram to its creator's others", async ({
+    page,
+    request,
+  }) => {
+    const user = newId();
+    const name = `Hedy ${user.slice(0, 8)}`;
+    const titles = [`Hers one ${user.slice(0, 8)}`, `Hers two ${user.slice(0, 8)}`];
+    const ids = [newId(), newId()];
+    for (const [index, id] of ids.entries()) {
+      await request.put(`/api/diagrams/${id}`, {
+        headers: { "X-User-Id": user },
+        data: { baseVersion: 0, elements: [], appState: { name: titles[index] } },
+      });
+    }
+    await page.goto("/admin");
+    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    (await connectLive(new URL(page.url()).origin, ids[0], { user, name })).socket.close();
+    await signIn(request);
+    const { publicId } = (
+      await (await request.get("/api/admin/users", { params: { search: name } })).json()
+    ).users[0];
+
+    await page.getByRole("tab", { name: "People" }).click();
+    await page.getByLabel("Search people").fill(name);
+    await page
+      .getByRole("row", { name: new RegExp(name) })
+      .getByRole("button", { name: "2", exact: true })
+      .click();
+    // The diagram list, searched for that person's id.
+    await expect(page.getByLabel("Search diagrams")).toHaveValue(publicId);
+    for (const title of titles) await expect(page.getByRole("row", { name: new RegExp(title) })).toBeVisible();
+    await expect(page.getByText("Showing 2 of 2 diagrams")).toBeVisible();
+
+    // The creator is shown by name and the start of their id; clicking it does the same search.
+    await page.getByLabel("Search diagrams").fill(titles[0]);
+    await expect(page.getByText("Showing 1 of 1 diagrams")).toBeVisible();
+    await page.getByRole("button", { name: `${name} ${publicId.slice(0, 8)}` }).click();
+    await expect(page.getByLabel("Search diagrams")).toHaveValue(publicId);
+    await expect(page.getByText("Showing 2 of 2 diagrams")).toBeVisible();
+
+    // Going to the tab by hand starts from an empty search again.
+    await page.getByRole("tab", { name: "People" }).click();
+    await page.getByRole("tab", { name: "Diagrams" }).click();
+    await expect(page.getByLabel("Search diagrams")).toHaveValue("");
+  });
+
   test("shows who opened a diagram", async ({ page, request }) => {
     const name = `Seen diagram ${randomUUID().slice(0, 8)}`;
     const visitor = `Lin ${randomUUID().slice(0, 8)}`;
@@ -496,6 +589,16 @@ test.describe("backoffice page", () => {
     await page.getByLabel("Search people").fill(name);
     await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible();
     live.socket.close();
+
+    // Each person is shown with their id, and can be found by it.
+    await signIn(request);
+    const { publicId } = (
+      await (await request.get("/api/admin/users", { params: { search: name } })).json()
+    ).users[0];
+    const person = page.getByRole("row", { name: new RegExp(name) });
+    await expect(person).toContainText(publicId);
+    await page.getByLabel("Search people").fill(publicId);
+    await expect(person).toBeVisible();
 
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page.getByLabel("Password")).toBeVisible();

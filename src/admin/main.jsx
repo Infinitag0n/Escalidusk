@@ -95,9 +95,22 @@ function Login({ onSignedIn }) {
   );
 }
 
+/**
+ * A person as the lists show them: the name they chose, and the start of
+ * their public id, which is what tells apart two people with the same name.
+ * The whole id is in the tooltip.
+ */
+function Person({ name, id }) {
+  return (
+    <>
+      {name} <code title={`Id ${id}`}>{id.slice(0, 8)}</code>
+    </>
+  );
+}
+
 /** Loads a paged, searchable list from the API and keeps it in step with the search box. */
-function useList(path, field, onSignedOut) {
-  const [search, setSearch] = useState("");
+function useList(path, field, onSignedOut, initialSearch = "") {
+  const [search, setSearch] = useState(initialSearch);
   const [state, setState] = useState({ items: [], total: 0, loading: true, error: null });
 
   const load = useCallback(
@@ -194,8 +207,8 @@ function Visitors({ diagram, onSignedOut }) {
   );
 }
 
-function Diagrams({ onSignedOut, onChanged }) {
-  const list = useList("/diagrams", "diagrams", onSignedOut);
+function Diagrams({ onSignedOut, onChanged, initialSearch }) {
+  const list = useList("/diagrams", "diagrams", onSignedOut, initialSearch);
   // The diagram whose visitors are shown, if any.
   const [expanded, setExpanded] = useState(null);
 
@@ -220,7 +233,7 @@ function Diagrams({ onSignedOut, onChanged }) {
       <input
         className="search"
         type="search"
-        placeholder="Search by name, or paste a diagram id"
+        placeholder="Search by diagram name or id, or by creator name or id"
         aria-label="Search diagrams"
         value={list.search}
         onChange={(event) => list.setSearch(event.target.value)}
@@ -232,6 +245,7 @@ function Diagrams({ onSignedOut, onChanged }) {
               <th>Name</th>
               <th>Last changed</th>
               <th>Created</th>
+              <th>Created by</th>
               <th className="number">Elements</th>
               <th className="number">Size</th>
               <th className="number">Open now</th>
@@ -250,11 +264,29 @@ function Diagrams({ onSignedOut, onChanged }) {
                 </td>
                 <td>
                   <When time={diagram.updatedAt} />
-                  {diagram.updatedBy && <span className="muted"> by {diagram.updatedBy}</span>}
+                  {diagram.updatedBy && (
+                    <span className="muted">
+                      {" "}
+                      by <Person name={diagram.updatedBy} id={diagram.updatedById} />
+                    </span>
+                  )}
                 </td>
                 <td>
                   <When time={diagram.createdAt} />
-                  {diagram.createdBy && <span className="muted"> by {diagram.createdBy}</span>}
+                </td>
+                <td>
+                  {diagram.createdBy ? (
+                    <button
+                      type="button"
+                      className="link"
+                      title="Show every diagram this person created"
+                      onClick={() => list.setSearch(diagram.createdById)}
+                    >
+                      <Person name={diagram.createdBy} id={diagram.createdById} />
+                    </button>
+                  ) : (
+                    <span className="muted">Unknown</span>
+                  )}
                 </td>
                 <td className="number">{diagram.elementCount}</td>
                 <td className="number" title={`${diagram.imageCount} image(s)`}>
@@ -283,7 +315,7 @@ function Diagrams({ onSignedOut, onChanged }) {
               </tr>
               {expanded === diagram.id && (
                 <tr className="details">
-                  <td colSpan={8}>
+                  <td colSpan={9}>
                     <Visitors diagram={diagram} onSignedOut={onSignedOut} />
                   </td>
                 </tr>
@@ -292,7 +324,7 @@ function Diagrams({ onSignedOut, onChanged }) {
             ))}
             {!list.loading && list.items.length === 0 && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={9} className="empty">
                   {list.search ? "No diagrams match." : "No diagrams yet."}
                 </td>
               </tr>
@@ -305,27 +337,29 @@ function Diagrams({ onSignedOut, onChanged }) {
   );
 }
 
-function People({ onSignedOut }) {
+function People({ onSignedOut, onShowDiagrams }) {
   const list = useList("/users", "users", onSignedOut);
   return (
     <section>
       <input
         className="search"
         type="search"
-        placeholder="Search by name"
+        placeholder="Search by name or id"
         aria-label="Search people"
         value={list.search}
         onChange={(event) => list.setSearch(event.target.value)}
       />
       <p className="hint">
-        People are browsers, not accounts: a name and an id each browser made up. Addresses are
-        stored only as hashes, so the last two columns count them without showing them.
+        People are browsers, not accounts: a name and an id each browser made up. Anyone can
+        change their name, so the id is what identifies a person. Addresses are stored only as
+        hashes, so the last two columns count them without showing them.
       </p>
       <div className="table-scroll">
         <table>
           <thead>
             <tr>
               <th>Name</th>
+              <th>Id</th>
               <th>Last seen</th>
               <th>First seen</th>
               <th className="number">Created</th>
@@ -338,14 +372,30 @@ function People({ onSignedOut }) {
           <tbody>
             {list.items.map((user) => (
               <tr key={user.publicId}>
-                <td title={`Public id ${user.publicId}`}>{user.name}</td>
+                <td>{user.name}</td>
+                <td>
+                  <code>{user.publicId}</code>
+                </td>
                 <td>
                   <When time={user.lastSeen} />
                 </td>
                 <td>
                   <When time={user.firstSeen} />
                 </td>
-                <td className="number">{user.created}</td>
+                <td className="number">
+                  {user.created > 0 ? (
+                    <button
+                      type="button"
+                      className="link"
+                      title="Show the diagrams this person created"
+                      onClick={() => onShowDiagrams(user.publicId)}
+                    >
+                      {user.created}
+                    </button>
+                  ) : (
+                    0
+                  )}
+                </td>
                 <td className="number">{user.opened}</td>
                 <td className="number">{user.lastEditorOf}</td>
                 <td className="number">{user.addressCount}</td>
@@ -354,7 +404,7 @@ function People({ onSignedOut }) {
             ))}
             {!list.loading && list.items.length === 0 && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={9} className="empty">
                   {list.search ? "Nobody matches." : "Nobody yet."}
                 </td>
               </tr>
@@ -493,6 +543,12 @@ function Overview({ stats, onSignedOut, onChanged }) {
 
 function Backoffice({ onSignedOut }) {
   const [tab, setTab] = useState("diagrams");
+  // What the diagram list starts out searching for: set when coming from a person.
+  const [diagramSearch, setDiagramSearch] = useState("");
+  const showTab = (key, search = "") => {
+    setDiagramSearch(search);
+    setTab(key);
+  };
   const [stats, setStats] = useState(null);
 
   const loadStats = useCallback(async () => {
@@ -531,14 +587,18 @@ function Backoffice({ onSignedOut }) {
             type="button"
             role="tab"
             aria-selected={tab === key}
-            onClick={() => setTab(key)}
+            onClick={() => showTab(key)}
           >
             {label}
           </button>
         ))}
       </nav>
-      {tab === "diagrams" && <Diagrams onSignedOut={onSignedOut} onChanged={loadStats} />}
-      {tab === "people" && <People onSignedOut={onSignedOut} />}
+      {tab === "diagrams" && (
+        <Diagrams onSignedOut={onSignedOut} onChanged={loadStats} initialSearch={diagramSearch} />
+      )}
+      {tab === "people" && (
+        <People onSignedOut={onSignedOut} onShowDiagrams={(id) => showTab("diagrams", id)} />
+      )}
       {tab === "feedback" && <Feedback onSignedOut={onSignedOut} />}
     </main>
   );
