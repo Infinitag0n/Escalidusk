@@ -4,11 +4,17 @@
 # so the two always match.
 ARG BASE_PATH=""
 
+# An exact version, not just "22": the server uses Node's built-in SQLite,
+# which is still marked experimental and may change between releases. With
+# this, rebuilding the image gives the same Node every time. Raise it on
+# purpose, for security fixes, and run the tests on the new version first.
+ARG NODE_VERSION=22.23.5
+
 # Debian rather than Alpine: on some older kernels (CentOS 7, for one) SQLite
 # under Alpine's musl fails every write with "disk I/O error".
 
 # --- Build the frontend ---
-FROM node:22-bookworm-slim AS build
+FROM node:${NODE_VERSION}-bookworm-slim AS build
 ARG BASE_PATH
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -17,7 +23,7 @@ COPY . .
 RUN BASE_PATH="$BASE_PATH" npm run build
 
 # --- Runtime: one Node process serves the API and the built frontend ---
-FROM node:22-bookworm-slim
+FROM node:${NODE_VERSION}-bookworm-slim
 ARG BASE_PATH
 WORKDIR /app
 ENV NODE_ENV=production \

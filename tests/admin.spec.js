@@ -380,7 +380,6 @@ test.describe("backoffice data", () => {
     const stats = await (await request.get("/api/admin/stats")).json();
     expect(stats.storage).toMatchObject({ limit: null, nearlyFull: false });
     expect(stats.storage.used).toBeGreaterThan(0);
-    expect(stats.diskFree).toBeGreaterThan(0);
   });
 
   test("pages through long lists", async ({ request }) => {
@@ -531,7 +530,6 @@ test.describe("backoffice page", () => {
     await page.getByLabel("Password").fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByText("Database size")).toBeVisible();
-    await expect(page.getByText("Disk free")).toBeVisible();
     // No size limit on this server, so no bar and no warning.
     await expect(page.getByRole("progressbar")).toHaveCount(0);
     const health = page.getByLabel("Server health");

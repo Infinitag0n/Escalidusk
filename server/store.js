@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync, statfsSync, statSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -462,15 +462,12 @@ export function openStore(dataDir, { maxBytes = null } = {}) {
     /** Totals for the backoffice, plus what removeOrphanedImages() would free. */
     stats() {
       const orphaned = selectOrphanedImages.get({ $before: Date.now() - DAY_MS });
-      const disk = statfsSync(dataDir);
       return {
         ...selectTotals.get(),
         orphanedImages: orphaned.count,
         orphanedImageSize: orphaned.size,
         databaseSize: sizeOnDisk(),
         storage: this.storage(),
-        // Room left on the disk the database is on, which it shares with whatever else is there.
-        diskFree: Number(disk.bavail) * Number(disk.bsize),
       };
     },
 

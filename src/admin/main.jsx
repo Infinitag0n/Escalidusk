@@ -616,10 +616,6 @@ function Overview({ stats, health, onSignedOut, onChanged }) {
           <dd>{stats.deletedDiagrams}</dd>
         </div>
         <Storage stats={stats} />
-        <div title="Room left on the disk the database is on, which it shares with everything else there">
-          <dt>Disk free</dt>
-          <dd>{formatSize(stats.diskFree)}</dd>
-        </div>
       </dl>
       <Health health={health} />
       <p className="cleanup">

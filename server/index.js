@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import Fastify from "fastify";
+import Fastify, { LogController } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import { createAddressHasher } from "./address.js";
@@ -68,12 +68,21 @@ try {
 }
 
 const store = openStore(DATA_DIR, { maxBytes: MAX_DATABASE_SIZE });
-const live = createLiveRooms();
+// Set once the server (and with it the log) exists.
+let reportError = (error) => console.error(error);
+const live = createLiveRooms({ onError: (error, what) => reportError(error, what) });
 const health = createHealth({ connections: live.connections, messages: live.messages });
 const hashAddress = createAddressHasher(process.env.ADDRESS_SECRET || store.addressSecret());
 
 store.pruneAddresses(ADDRESS_RETENTION_DAYS);
-setInterval(() => store.pruneAddresses(ADDRESS_RETENTION_DAYS), DAY_MS).unref();
+// On a timer nothing catches an error, and an uncaught one stops the server.
+setInterval(() => {
+  try {
+    store.pruneAddresses(ADDRESS_RETENTION_DAYS);
+  } catch (error) {
+    reportError(error, "forgetting old addresses");
+  }
+}, DAY_MS).unref();
 
 const app = Fastify({
   bodyLimit: MAX_SCENE_BYTES,
@@ -81,7 +90,7 @@ const app = Fastify({
   // Routes below are written as if the app were at the root.
   rewriteUrl: (request) => withoutBasePath(request.url, BASE_PATH),
   // Starting, warnings and failures are logged either way.
-  disableRequestLogging: !LOG_REQUESTS,
+  logController: new LogController({ disableRequestLogging: !LOG_REQUESTS }),
   logger: {
     serializers: {
       // Addresses are only ever kept hashed, so keep them out of the log too.
@@ -90,6 +99,7 @@ const app = Fastify({
     },
   },
 });
+reportError = (error, what) => app.log.error({ err: error }, `Failed while ${what}`);
 await app.register(fastifyWebsocket, { options: { maxPayload: MAX_LIVE_MESSAGE_BYTES } });
 
 // Image uploads arrive as raw bytes.
@@ -252,11 +262,19 @@ app.get("/api/diagrams/:id/live", { websocket: true }, (socket, request) => {
     socket.close(1008, "invalid diagram id");
     return;
   }
-  if (store.isDeleted(id)) {
-    socket.close(DIAGRAM_DELETED, "diagram deleted");
+  let found;
+  try {
+    if (store.isDeleted(id)) {
+      socket.close(DIAGRAM_DELETED, "diagram deleted");
+      return;
+    }
+    found = store.findDiagram(id);
+  } catch (error) {
+    // This runs after the request proper, where nothing else would catch it.
+    reportError(error, "opening a live connection");
+    socket.close(1011, "server error");
     return;
   }
-  const found = store.findDiagram(id);
   // An unknown id is a diagram that has not been saved yet; its room is the id itself.
   const addressHash = hashAddress(request.ip);
   live.join(found?.row.id ?? id, socket, {

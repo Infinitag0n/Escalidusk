@@ -5,6 +5,7 @@ const HEARTBEAT_MS = 30_000;
 const HELLO_TIMEOUT_MS = 10_000;
 const OPEN = 1; // WebSocket.readyState of an open socket
 const POLICY_VIOLATION = 1008; // WebSocket close code
+const INTERNAL_ERROR = 1011; // WebSocket close code
 export const DIAGRAM_DELETED = 4410; // our own close code: the diagram no longer exists
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -43,14 +44,29 @@ function parse(raw) {
  * People on a read-only link are in the same room and are seen by the
  * others, but any diagram change they send is dropped, and they are never
  * told the editing id (rooms are keyed by it, but no message contains it).
+ *
+ * Messages are handled outside any request, where an error nobody catches
+ * would stop the whole server. So whatever goes wrong while handling one
+ * connection's message (the database failing as someone is noted down, say)
+ * ends that connection only, and is reported through `onError`.
+ *
+ * @param {object} [options]
+ * @param {(error: Error, what: string) => void} [options.onError]
  */
-export function createLiveRooms() {
+export function createLiveRooms({ onError = () => {} } = {}) {
   const rooms = new Map(); // room id -> Set of clients
   const pending = new Set(); // connected, but not yet introduced
   let relayed = 0; // messages passed on since the start, for the health report
 
   function send(client, text) {
-    if (client.socket.readyState === OPEN) client.socket.send(text);
+    if (client.socket.readyState !== OPEN) return;
+    try {
+      client.socket.send(text);
+    } catch (error) {
+      // One broken connection must not keep a message from the others in the room.
+      onError(error, "sending a live message");
+      client.socket.terminate();
+    }
   }
 
   function broadcast(roomId, message, except) {
@@ -159,12 +175,16 @@ export function createLiveRooms() {
   const heartbeat = setInterval(() => {
     for (const clients of [pending, ...rooms.values()]) {
       for (const client of clients) {
-        if (!client.alive) {
-          client.socket.terminate();
-          continue;
+        try {
+          if (!client.alive) {
+            client.socket.terminate();
+            continue;
+          }
+          client.alive = false;
+          client.socket.ping();
+        } catch (error) {
+          onError(error, "checking a live connection");
         }
-        client.alive = false;
-        client.socket.ping();
       }
     }
   }, HEARTBEAT_MS);
@@ -207,11 +227,16 @@ export function createLiveRooms() {
         client.alive = true;
       });
       socket.on("message", (raw) => {
-        const message = parse(raw);
-        if (!client.room) introduce(client, message);
-        else if (message) {
-          relayed++;
-          relay(client, message);
+        try {
+          const message = parse(raw);
+          if (!client.room) introduce(client, message);
+          else if (message) {
+            relayed++;
+            relay(client, message);
+          }
+        } catch (error) {
+          onError(error, "handling a live message");
+          socket.close(INTERNAL_ERROR, "server error");
         }
       });
       socket.on("error", () => socket.terminate());
@@ -222,7 +247,11 @@ export function createLiveRooms() {
         if (!room) return;
         room.delete(client);
         if (room.size === 0 && rooms.get(roomId) === room) rooms.delete(roomId);
-        broadcast(roomId, { t: "leave", id: client.id });
+        try {
+          broadcast(roomId, { t: "leave", id: client.id });
+        } catch (error) {
+          onError(error, "announcing that someone left");
+        }
       });
     },
 

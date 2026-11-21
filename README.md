@@ -121,7 +121,7 @@ Setting `ADMIN_PASSWORD` switches on a backoffice at `<url>/admin`. Without it t
 
 The password is the only protection, and whoever has it can open and delete everything, so use a long one and serve the site over HTTPS. Five wrong passwords lock sign-in for five minutes. A session lasts twelve hours and is lost when the server restarts.
 
-The top of the backoffice shows how full the database is and how much room the disk has left, and how the server is doing: how long it has been running, how long it keeps everything waiting while busy (the one figure to watch: a few milliseconds is healthy, hundreds means people notice), how long saves take, live connections and messages, memory, and how many requests it failed to answer. These figures are measured in the server's memory and start over when it restarts; none of them is stored.
+The top of the backoffice shows how full the database is, and how the server is doing: how long it has been running, how long it keeps everything waiting while busy (the one figure to watch: a few milliseconds is healthy, hundreds means people notice), how long saves take, live connections and messages, memory, and how many requests it failed to answer. These figures are measured in the server's memory and start over when it restarts; none of them is stored.
 
 ## Running out of room
 

@@ -162,7 +162,6 @@ test.describe("a server that is nearly full", () => {
     const stats = await admin("/stats");
     expect(stats.storage).toMatchObject({ limit: 3 * MB, nearlyFull: true });
     expect(stats.storage.used).toBeGreaterThanOrEqual(2.7 * MB);
-    expect(stats.diskFree).toBeGreaterThan(0);
 
     const refused = await save(randomUUID(), 0);
     expect(refused.status).toBe(507);
@@ -210,7 +209,6 @@ test.describe("a server that is nearly full", () => {
     await expect(page.getByText(/^2\.\d MB of 3\.0 MB \(9\d%\)/)).toBeVisible();
     await expect(page.getByRole("progressbar", { name: "Database size used" })).toBeVisible();
     await expect(page.getByRole("alert")).toContainText("Nearly full. New diagrams and images are turned away");
-    await expect(page.getByText("Disk free")).toBeVisible();
     await page.close();
   });
 });
