@@ -87,9 +87,7 @@ export function FeedbackDialog({ dark, onClose }) {
           </>
         ) : (
           <form onSubmit={send}>
-            <p className="picker__hint">
-              What works, what does not, what is missing. It is sent without your name.
-            </p>
+            <p className="picker__hint">Your feedback is anonymous.</p>
             <textarea
               aria-label="Your feedback"
               rows={6}
