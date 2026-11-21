@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-// Draw, Insert image and Eraser live under "More tools" instead of taking up
+// Insert image and Eraser live under "More tools" instead of taking up
 // room in the toolbar. Excalidraw has no setting for this, so it is done from
-// the outside: the three toolbar buttons are hidden with CSS (see styles.css)
+// the outside: the two toolbar buttons are hidden with CSS (see styles.css)
 // and matching entries are added to the "More tools" menu whenever it opens.
 // The tools themselves are untouched, so their keyboard shortcuts still work.
 //
@@ -18,15 +18,6 @@ const icon = (paths) => (
 );
 
 export const MOVED_TOOLS = [
-  {
-    type: "freedraw",
-    label: "Draw",
-    shortcut: "P",
-    icon: icon([
-      "M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4",
-      "M13.5 6.5l4 4",
-    ]),
-  },
   {
     type: "image",
     label: "Insert image",

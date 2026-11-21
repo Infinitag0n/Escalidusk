@@ -23,63 +23,61 @@ async function drag(page, from, to) {
 const types = async (request, id) =>
   liveElements(await stored(request, id)).map((element) => element.type);
 
-test("Draw, Insert image and Eraser are under More tools, not in the toolbar", async ({ page }) => {
+test("Insert image and Eraser are under More tools, not in the toolbar", async ({ page }) => {
   await openDiagram(page);
-  for (const name of ["freedraw", "image", "eraser"]) {
+  for (const name of ["image", "eraser"]) {
     await expect(toolbarTool(page, name)).toBeHidden();
   }
-  // The rest of the toolbar is as it was.
-  for (const name of ["selection", "rectangle", "diamond", "ellipse", "arrow", "line", "text"]) {
+  // The rest of the toolbar is as it was: the tools for keys 1 to 8, none skipped.
+  for (const name of ["selection", "rectangle", "diamond", "ellipse", "arrow", "line", "freedraw", "text"]) {
     await expect(toolbarTool(page, name)).toBeVisible();
   }
 
   await moreTools(page).click();
   const menu = page.locator(".App-toolbar__extra-tools-dropdown");
   const labels = await menu.locator(".dropdown-menu-item__text").allTextContents();
-  expect(labels.slice(0, 3)).toEqual(["Draw", "Insert image", "Eraser"]);
+  expect(labels.slice(0, 2)).toEqual(["Insert image", "Eraser"]);
   expect(labels).toContain("Laser pointer"); // Excalidraw's own entries are still there
-  await expect(movedTool(page, "freedraw").locator(".dropdown-menu-item__shortcut")).toHaveText("P");
+  await expect(movedTool(page, "eraser").locator(".dropdown-menu-item__shortcut")).toHaveText("E");
 });
 
-test("Draw from the menu draws, and the menu closes behind it", async ({ page, request }) => {
-  const id = await openDiagram(page);
-  await moreTools(page).click();
-  await movedTool(page, "freedraw").click();
-  await expect(page.locator(".App-toolbar__extra-tools-dropdown")).toHaveCount(0);
-  // "More tools" lights up while a tool from it is selected.
-  await expect(page.locator(".editor--moved-tool-active")).toHaveCount(1);
-
-  await drag(page, { x: 300, y: 300 }, { x: 500, y: 380 });
-  await expectStoredCount(request, id, 1);
-  expect(await types(request, id)).toEqual(["freedraw"]);
-
-  await page.locator('[data-testid="toolbar-selection"]').click({ force: true });
-  await expect(page.locator(".editor--moved-tool-active")).toHaveCount(0);
-});
-
-test("Eraser from the menu erases", async ({ page, request }) => {
+test("Eraser from the menu erases, and the menu closes behind it", async ({ page, request }) => {
   const { id } = await seedDiagram(request, { elements: [rectangle()] });
   await openDiagram(page, id);
   await moreTools(page).click();
   await movedTool(page, "eraser").click();
+  await expect(page.locator(".App-toolbar__extra-tools-dropdown")).toHaveCount(0);
+  // "More tools" lights up while a tool from it is selected.
+  await expect(page.locator(".editor--moved-tool-active")).toHaveCount(1);
 
   // The seeded rectangle is centred on screen; drag across it.
   const { width, height } = page.viewportSize();
   await drag(page, { x: width / 2 - 150, y: height / 2 }, { x: width / 2 + 150, y: height / 2 });
   await expectStoredCount(request, id, 0);
+
+  await page.locator('[data-testid="toolbar-selection"]').click({ force: true });
+  await expect(page.locator(".editor--moved-tool-active")).toHaveCount(0);
 });
 
-test("the keyboard shortcuts for the moved tools still work", async ({ page, request }) => {
+test("Draw is in the toolbar, on key 7", async ({ page, request }) => {
   const id = await openDiagram(page);
   await page.mouse.click(600, 500); // give the canvas the keyboard
-  await page.keyboard.press("p");
-  await expect(page.locator(".editor--moved-tool-active")).toHaveCount(1);
+  await page.keyboard.press("7");
+  await expect(page.locator('[data-testid="toolbar-freedraw"]')).toBeChecked();
+  await expect(page.locator(".editor--moved-tool-active")).toHaveCount(0);
   await drag(page, { x: 300, y: 300 }, { x: 450, y: 360 });
   await expectStoredCount(request, id, 1);
   expect(await types(request, id)).toEqual(["freedraw"]);
+});
 
+test("the keyboard shortcut for the eraser still works", async ({ page, request }) => {
+  const { id } = await seedDiagram(request, { elements: [rectangle()] });
+  await openDiagram(page, id);
+  const { width, height } = page.viewportSize();
+  await page.mouse.click(width / 2, height / 2 + 300); // give the canvas the keyboard
   await page.keyboard.press("e");
-  await drag(page, { x: 250, y: 330 }, { x: 500, y: 330 });
+  await expect(page.locator(".editor--moved-tool-active")).toHaveCount(1);
+  await drag(page, { x: width / 2 - 150, y: height / 2 }, { x: width / 2 + 150, y: height / 2 });
   await expectStoredCount(request, id, 0);
 });
 
@@ -89,7 +87,7 @@ test("the selected entry is marked in the menu", async ({ page }) => {
   await movedTool(page, "eraser").click();
   await moreTools(page).click();
   await expect(movedTool(page, "eraser")).toHaveClass(/dropdown-menu-item--selected/);
-  await expect(movedTool(page, "freedraw")).not.toHaveClass(/dropdown-menu-item--selected/);
+  await expect(movedTool(page, "image")).not.toHaveClass(/dropdown-menu-item--selected/);
 });
 
 test("images can still be added by dropping them on the canvas", async ({ page, request }) => {

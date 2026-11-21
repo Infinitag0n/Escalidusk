@@ -460,9 +460,8 @@ body,
   color: var(--list-muted);
 }
 
-/* --- Draw, Insert image and Eraser are moved under "More tools" (see MovedTools.jsx) --- */
+/* --- Insert image and Eraser are moved under "More tools" (see MovedTools.jsx) --- */
 
-.excalidraw .App-toolbar label:has([data-testid="toolbar-freedraw"]),
 .excalidraw .App-toolbar label:has([data-testid="toolbar-image"]),
 .excalidraw .App-toolbar label:has([data-testid="toolbar-eraser"]) {
   display: none;
